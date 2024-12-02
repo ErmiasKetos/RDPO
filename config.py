@@ -46,7 +46,10 @@ class Config:
 # Setup logging
 logging.basicConfig(
     filename=Config.LOG_FILE,
-    level=logging.INFO
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Custom styles
 CUSTOM_STYLES = """
