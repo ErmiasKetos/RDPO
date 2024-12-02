@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
-from importlib.metadata import version
+import importlib.metadata
 
 # Load environment variables
 load_dotenv()
@@ -41,7 +41,7 @@ class Config:
 
     @staticmethod
     def get_streamlit_version():
-        return version('streamlit')
+        return importlib.metadata.version('streamlit')
 
 # Setup logging
 logging.basicConfig(
