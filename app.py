@@ -12,7 +12,6 @@ import io
 from email.mime.text import MIMEText
 import base64
 
-
 # Important: This allows OAuth to work in development
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -167,8 +166,7 @@ def main():
     # Check authentication
     if not check_google_services():
         return
-    
-    # Rest of your app code here...
+
 
 def send_email(service, sender_email, po_data):
     """Send email using Gmail API"""
