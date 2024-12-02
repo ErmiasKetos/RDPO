@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+from importlib.metadata import version
 
 # Load environment variables
 load_dotenv()
@@ -38,13 +39,14 @@ class Config:
     }
     DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
 
+    @staticmethod
+    def get_streamlit_version():
+        return version('streamlit')
+
 # Setup logging
 logging.basicConfig(
     filename=Config.LOG_FILE,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+    level=logging.INFO
 
 # Custom styles
 CUSTOM_STYLES = """
