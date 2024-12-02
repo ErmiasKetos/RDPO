@@ -33,12 +33,13 @@ SCOPES = [
 # Client configuration
 CLIENT_CONFIG = {
     "web": {
-        "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
-        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+        "client_id": st.secrets["GOOGLE_CLIENT_ID"],
+        "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
         "redirect_uris": ["https://pybhayw4ybcvgk78gheuna.streamlit.app/"],
-        "javascript_origins": ["https://pybhayw4ybcvgk78gheuna.streamlit.app/"]
+        "javascript_origins": ["https://pybhayw4ybcvgk78gheuna.streamlit.app/"],
+        "hosted_domain": "ketos.co"
     }
 }
 
