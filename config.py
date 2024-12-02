@@ -2,6 +2,10 @@ import os
 import logging
 from pathlib import Path
 
+# Use Streamlit Secrets Manager if running in Streamlit Cloud
+GOOGLE_CLIENT_ID=612427121204-k50eh7sd5rsi2q9f52nkk758l267t0ad.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=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
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
