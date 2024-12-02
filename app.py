@@ -43,8 +43,25 @@ CLIENT_CONFIG = {
     }
 }
 
+
+def validate_user_domain(email):
+    """Validate user's email domain"""
+    return email.endswith('@ketos.co')
+
+def get_user_email(service):
+    """Get user's email address and validate domain"""
+    try:
+        profile = service.users().getProfile(userId='me').execute()
+        email = profile['emailAddress']
+        if not validate_user_domain(email):
+            raise ValueError("Please use your ketos.co email address to access this application")
+        return email
+    except Exception as e:
+        logger.error(f"Error getting user email: {str(e)}")
+        return None
+
 def init_google_services():
-    """Initialize Google Drive and Gmail API services"""
+    """Initialize Google Drive and Gmail API services with domain validation"""
     try:
         if 'google_auth_credentials' not in st.session_state:
             flow = Flow.from_client_config(
@@ -53,16 +70,21 @@ def init_google_services():
                 redirect_uri=CLIENT_CONFIG['web']['redirect_uris'][0]
             )
             
-            auth_url, _ = flow.authorization_url(prompt='consent')
+            # Add login_hint for ketos.co domain
+            auth_url, _ = flow.authorization_url(
+                prompt='consent',
+                login_hint='@ketos.co',
+                hd='ketos.co'  # Restrict to ketos.co domain
+            )
             
             st.markdown("""
                 <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center;'>
                     <h3>Google Authentication Required</h3>
-                    <p>Please authenticate to use the PO request form.</p>
+                    <p>Please log in with your ketos.co email address.</p>
                 </div>
             """, unsafe_allow_html=True)
             
-            if st.button("Login with Google", key="google_auth"):
+            if st.button("Login with Ketos Email", key="google_auth"):
                 st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
                 st.stop()
 
@@ -71,6 +93,15 @@ def init_google_services():
                 code = query_params['code'][0]
                 flow.fetch_token(code=code)
                 credentials = flow.credentials
+                
+                # Validate user email before storing credentials
+                tmp_service = build('gmail', 'v1', credentials=credentials)
+                user_email = get_user_email(tmp_service)
+                
+                if not user_email:
+                    st.error("Please use your ketos.co email address to access this application")
+                    return None, None
+                
                 st.session_state.google_auth_credentials = {
                     'token': credentials.token,
                     'refresh_token': credentials.refresh_token,
@@ -96,7 +127,6 @@ def init_google_services():
         logger.error(f"Error initializing Google services: {str(e)}")
         st.error(f"Error initializing Google services: {str(e)}")
         return None, None
-
 def get_user_email(service):
     """Get user's email address from Gmail API"""
     try:
