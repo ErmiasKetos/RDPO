@@ -7,4 +7,3 @@ pytz==2023.3
 python-dotenv==1.0.0
 pandas>=1.5.0,<1.6.0
 numpy>=1.21.0,<1.24.0
-
