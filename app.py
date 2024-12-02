@@ -17,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
+APP_URL = "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"
 DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
 PURCHASE_SUMMARY_FILE_NAME = "purchase_summary.csv"
 
@@ -44,88 +45,84 @@ CLIENT_CONFIG = {
 }
 
 
-def validate_user_domain(email):
-    """Validate user's email domain"""
-    return email.endswith('@ketos.co')
-
-def get_user_email(service):
-    """Get user's email address and validate domain"""
-    try:
-        profile = service.users().getProfile(userId='me').execute()
-        email = profile['emailAddress']
-        if not validate_user_domain(email):
-            raise ValueError("Please use your ketos.co email address to access this application")
-        return email
-    except Exception as e:
-        logger.error(f"Error getting user email: {str(e)}")
-        return None
-
 def init_google_services():
-    """Initialize Google Drive and Gmail API services with domain validation"""
+    """Initialize Google Drive and Gmail API services"""
     try:
         if 'google_auth_credentials' not in st.session_state:
+            # Create OAuth 2.0 flow
             flow = Flow.from_client_config(
                 CLIENT_CONFIG,
                 scopes=SCOPES,
-                redirect_uri=CLIENT_CONFIG['web']['redirect_uris'][0]
+                redirect_uri=f"{APP_URL}/"
             )
             
-            # Add login_hint for ketos.co domain
+            # Generate authorization URL with modified parameters
             auth_url, _ = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
                 prompt='consent',
-                login_hint='@ketos.co',
-                hd='ketos.co'  # Restrict to ketos.co domain
+                state=st.session_state.get("_state", "initial")
             )
             
+            # Display login button
             st.markdown("""
                 <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center;'>
                     <h3>Google Authentication Required</h3>
-                    <p>Please log in with your ketos.co email address.</p>
+                    <p>Please authenticate to use the PO request form.</p>
                 </div>
             """, unsafe_allow_html=True)
             
-            if st.button("Login with Ketos Email", key="google_auth"):
+            if st.button("Login with Google", key="google_auth"):
                 st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
                 st.stop()
 
+            # Handle OAuth callback
             query_params = st.experimental_get_query_params()
             if 'code' in query_params:
                 code = query_params['code'][0]
-                flow.fetch_token(code=code)
-                credentials = flow.credentials
-                
-                # Validate user email before storing credentials
-                tmp_service = build('gmail', 'v1', credentials=credentials)
-                user_email = get_user_email(tmp_service)
-                
-                if not user_email:
-                    st.error("Please use your ketos.co email address to access this application")
+                try:
+                    flow.fetch_token(code=code)
+                    credentials = flow.credentials
+                    
+                    st.session_state.google_auth_credentials = {
+                        'token': credentials.token,
+                        'refresh_token': credentials.refresh_token,
+                        'token_uri': credentials.token_uri,
+                        'client_id': credentials.client_id,
+                        'client_secret': credentials.client_secret,
+                        'scopes': credentials.scopes
+                    }
+                    st.experimental_set_query_params()
+                    st.rerun()
+                except Exception as e:
+                    logger.error(f"Error fetching token: {str(e)}")
+                    st.error("Authentication failed. Please try again.")
                     return None, None
-                
-                st.session_state.google_auth_credentials = {
-                    'token': credentials.token,
-                    'refresh_token': credentials.refresh_token,
-                    'token_uri': credentials.token_uri,
-                    'client_id': credentials.client_id,
-                    'client_secret': credentials.client_secret,
-                    'scopes': credentials.scopes
-                }
-                st.experimental_set_query_params()
 
+        # Create services if credentials exist
         if 'google_auth_credentials' in st.session_state:
             creds = Credentials.from_authorized_user_info(
                 st.session_state.google_auth_credentials,
                 SCOPES
             )
-            drive_service = build('drive', 'v3', credentials=creds)
-            gmail_service = build('gmail', 'v1', credentials=creds)
-            return drive_service, gmail_service
+            
+            # Build services
+            try:
+                drive_service = build('drive', 'v3', credentials=creds)
+                gmail_service = build('gmail', 'v1', credentials=creds)
+                return drive_service, gmail_service
+            except Exception as e:
+                logger.error(f"Error building services: {str(e)}")
+                # Clear invalid credentials
+                del st.session_state.google_auth_credentials
+                st.error("Session expired. Please login again.")
+                return None, None
         
         return None, None
 
     except Exception as e:
-        logger.error(f"Error initializing Google services: {str(e)}")
-        st.error(f"Error initializing Google services: {str(e)}")
+        logger.error(f"Error in authentication flow: {str(e)}")
+        st.error(f"Authentication error: {str(e)}")
         return None, None
 def get_user_email(service):
     """Get user's email address from Gmail API"""
