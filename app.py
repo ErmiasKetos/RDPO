@@ -10,6 +10,9 @@ def main():
     UIComponents.show_header()
     UIComponents.show_instructions()
 
+    # Display Streamlit version
+    st.sidebar.text(f"Streamlit version: {Config.get_streamlit_version()}")
+
     # Initialize managers
     data_manager = DataManager()
     drive_manager = DriveManager()
