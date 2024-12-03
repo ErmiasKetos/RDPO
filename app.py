@@ -1,27 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 import io
-import smtplib
+import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
-# Google Drive and Gmail setup
-SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send']
-creds = None
-if 'google_token' in st.secrets:
-    creds = Credentials.from_authorized_user_info(st.secrets['google_token'], SCOPES)
-
-if not creds or not creds.valid:
-    st.error("Google credentials are not valid. Please set up the Google Drive and Gmail APIs.")
-    st.stop()
-
-drive_service = build('drive', 'v3', credentials=creds)
-gmail_service = build('gmail', 'v1', credentials=creds)
+from google_auth import get_drive_service, get_gmail_service
 
 # Constants
 DRIVE_FILE_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'
@@ -58,6 +42,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Initialize Google services
+try:
+    drive_service = get_drive_service()
+    gmail_service = get_gmail_service()
+except Exception as e:
+    st.error(f"Error initializing Google services: {str(e)}")
+    st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly in Streamlit secrets.")
+    st.stop()
+
 # Function to read CSV from Google Drive
 def read_csv_from_drive():
     try:
@@ -72,8 +65,11 @@ def update_csv_in_drive(df):
     try:
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
-        media = MediaFileUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
-        drive_service.files().update(fileId=DRIVE_FILE_ID, media_body=media).execute()
+        media = drive_service.files().update(
+            fileId=DRIVE_FILE_ID,
+            media_body=io.BytesIO(csv_buffer.getvalue().encode()),
+            fields='id'
+        ).execute()
         return True
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
