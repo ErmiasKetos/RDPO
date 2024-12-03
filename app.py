@@ -92,8 +92,14 @@ def create_csv_in_drive():
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
     if file_id is None:
-        st.error("No existing file ID. Please check your Google Drive permissions.")
-        return None, None
+        st.warning("No existing file ID. Attempting to create a new file...")
+        new_file_id = create_csv_in_drive()
+        if new_file_id:
+            st.success(f"New CSV file created with ID: {new_file_id}")
+            return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
+        else:
+            st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
+            return None, None
 
     try:
         file = drive_service.files().get_media(fileId=file_id).execute()
@@ -102,7 +108,14 @@ def read_csv_from_drive(file_id):
         return df, file_id
     except HttpError as e:
         if e.resp.status == 404:
-            st.error("CSV file not found in Google Drive. Please check the file ID and permissions.")
+            st.error(f"CSV file with ID {file_id} not found in Google Drive. Attempting to create a new file...")
+            new_file_id = create_csv_in_drive()
+            if new_file_id:
+                st.success(f"New CSV file created with ID: {new_file_id}")
+                return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
+            else:
+                st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
+                return None, None
         else:
             st.error(f"Error reading CSV from Google Drive: {str(e)}")
         return None, None
@@ -124,6 +137,7 @@ def update_csv_in_drive(df, file_id):
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
+
 
 # Function to generate PO number
 def generate_po_number(df):
@@ -167,6 +181,7 @@ def send_email(sender_email, subject, email_body):
         st.error(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
+
 # App title and instructions
 st.title("R&D Purchase Request (PO) Application")
 
@@ -175,6 +190,7 @@ with st.expander("Instructions", expanded=False):
     <div class="instructions card">
         <h3>How to use this application:</h3>
         <ol>
+            <li>Ensure you have the correct Google Drive file ID for the purchase summary.</li>
             <li>Fill in all required fields in the form below.</li>
             <li>Click the 'Submit Request' button to process your request.</li>
             <li>Your request will be saved and synced to Google Drive.</li>
@@ -187,7 +203,7 @@ with st.expander("Instructions", expanded=False):
 
 # Load existing purchase summary
 if 'drive_file_id' not in st.session_state:
-    st.session_state.drive_file_id = None
+    st.session_state.drive_file_id = st.text_input("Enter the Google Drive file ID for the purchase summary CSV:")
 
 df, new_file_id = read_csv_from_drive(st.session_state.drive_file_id)
 if new_file_id:
@@ -196,6 +212,8 @@ if new_file_id:
 if df is None:
     st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
     st.stop()
+
+
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
