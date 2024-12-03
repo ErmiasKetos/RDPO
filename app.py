@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from google_auth import get_drive_service, get_gmail_service
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseUpload
 
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
@@ -58,19 +59,23 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
+
 # Function to create a new CSV file in Google Drive
 def create_csv_in_drive():
     try:
         file_metadata = {
             'name': DRIVE_FILE_NAME,
+            'parents': [DRIVE_FOLDER_ID],
             'mimeType': 'text/csv'
         }
-        media = drive_service.files().create(
+        content = 'Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
+        media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
+        file = drive_service.files().create(
             body=file_metadata,
-            media_body=io.BytesIO(b'Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'),
+            media_body=media,
             fields='id'
         ).execute()
-        return media.get('id')
+        return file.get('id')
     except Exception as e:
         st.error(f"Error creating CSV in Google Drive: {str(e)}")
         return None
@@ -102,15 +107,16 @@ def update_csv_in_drive(df, file_id):
     try:
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
-        media = drive_service.files().update(
+        media = MediaIoBaseUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
+        drive_service.files().update(
             fileId=file_id,
-            media_body=io.BytesIO(csv_buffer.getvalue().encode()),
-            fields='id'
+            media_body=media
         ).execute()
         return True
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
+
 
 # Function to send email
 def send_email(sender_email, email_body):
@@ -147,7 +153,7 @@ with st.expander("Instructions", expanded=False):
 
 # Load existing purchase summary
 if 'drive_file_id' not in st.session_state:
-    st.session_state.drive_file_id = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'  # Default file ID
+    st.session_state.drive_file_id = None
 
 df, new_file_id = read_csv_from_drive(st.session_state.drive_file_id)
 if new_file_id:
