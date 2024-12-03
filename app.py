@@ -84,6 +84,7 @@ def find_or_create_csv():
         files = results.get('files', [])
 
         if files:
+            st.success(f"Existing CSV file found with ID: {files[0]['id']}")
             return files[0]['id']
         else:
             # If file doesn't exist, create it
@@ -111,6 +112,7 @@ def read_csv_from_drive(file_id):
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
         df = pd.read_csv(io.BytesIO(file_content))
+        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
         return df
     except HttpError as e:
         st.error(f"Error reading CSV from Google Drive: {str(e)}")
@@ -125,11 +127,17 @@ def update_csv_in_drive(df, file_id):
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         media = MediaIoBaseUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
-        drive_service.files().update(
+        updated_file = drive_service.files().update(
             fileId=file_id,
             media_body=media
         ).execute()
-        return True
+        
+        if updated_file:
+            st.success(f"CSV file successfully updated in Google Drive. File ID: {updated_file['id']}")
+            return True
+        else:
+            st.error("Failed to update CSV file in Google Drive.")
+            return False
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
@@ -163,8 +171,14 @@ def send_email(sender_email, subject, email_body):
         message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
-        return True
+        sent_message = gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
+        
+        if sent_message:
+            st.success(f"Email sent successfully! Message ID: {sent_message['id']}")
+            return True
+        else:
+            st.error("Failed to send email. No error was raised, but no message was returned.")
+            return False
     except HttpError as error:
         if error.resp.status == 403 and "accessNotConfigured" in str(error):
             st.error("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
@@ -177,13 +191,14 @@ def send_email(sender_email, subject, email_body):
         return False
 
 # Sidebar
-st.sidebar.title("Instructions")
+st.sidebar.title("Application Controls")
 st.sidebar.markdown("""
+### Instructions
 1. The application will automatically create a CSV file if one doesn't exist.
 2. Click the 'Update Records' button to manually refresh the data from Google Drive.
 3. Fill in the Purchase Request Form in the main area.
 4. Submit the form to create a new PO request.
-5. If you have any questions, please contact R&D OPs.
+5. Use the checkbox below the form to view all submitted requests.
 """)
 
 # Find or create CSV file
@@ -277,7 +292,7 @@ if submitted:
         email_body = f"""
         <html>
         <body>
-        <p></b>RE:New Purchase Request</b></p>
+        <h2>New Purchase Request</h2>
         <p>Dear Ordering,</p>
         <p>R&D would like to order the following:</p>
         <table border="1" cellpadding="5" cellspacing="0">
@@ -302,16 +317,23 @@ if submitted:
         if send_email(requester_email, f"Purchase request: {po_number}", email_body):
             st.success("Email sent successfully!")
         else:
-            st.error("Failed to send email. Please contact your department.")
+            st.error("Failed to send email. Please contact the IT department.")
         
         st.subheader("Email Preview")
         st.markdown(email_body, unsafe_allow_html=True)
     else:
         st.error("Please fill in all required fields.")
 
+# Summary table
+show_summary = st.checkbox("Show Purchase Request Summary")
 
+if show_summary:
+    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
+    st.subheader("Purchase Request Summary")
+    st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application ")
+st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
 
