@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
+DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
