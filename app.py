@@ -218,6 +218,11 @@ def send_email(sender_email, subject, email_body):
         return False
 
 # Sidebar
+if st.sidebar.button("Force Refresh"):
+    st.cache_data.clear()
+    st.session_state.pop('drive_file_id', None)
+    st.session_state.pop('df', None)
+    st.experimental_rerun()
 st.sidebar.title("Application Controls")
 st.sidebar.markdown("""
 ### Instructions
