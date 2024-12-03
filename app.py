@@ -75,6 +75,16 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
+def verify_file_accessibility(file_id):
+    try:
+        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size').execute()
+        log_debug_info(f"File is accessible - Name: {file['name']}, ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
+        return True
+    except Exception as e:
+        log_debug_info(f"Error accessing file: {str(e)}")
+        return False
+
+
 # Function to find or create the CSV file in Google Drive
 def find_or_create_csv():
     try:
