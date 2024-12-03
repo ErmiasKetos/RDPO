@@ -16,15 +16,15 @@ DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
-st.set_page_config(page_title="Purchase Request Application", layout="wide")
+st.set_page_config(page_title="R&D Purchase Request Application", layout="wide")
 
 # Custom CSS for styling
 st.markdown("""
 <style>
     .main {
+        background-color: #f0f5ff;
         padding: 2rem;
         border-radius: 10px;
-        background-color: #f0f2f6;
     }
     .stButton > button {
         width: 100%;
@@ -42,6 +42,16 @@ st.markdown("""
     }
     .summary-table {
         margin-top: 2rem;
+    }
+    .card {
+        background-color: white;
+        border-radius: 5px;
+        padding: 1rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+    h1, h2, h3 {
+        color: #2c3e50;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -67,7 +77,7 @@ def create_csv_in_drive():
             'parents': [DRIVE_FOLDER_ID],
             'mimeType': 'text/csv'
         }
-        content = 'Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
+        content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
         media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
         file = drive_service.files().create(
             body=file_metadata,
@@ -86,7 +96,7 @@ def read_csv_from_drive(file_id):
         new_file_id = create_csv_in_drive()
         if new_file_id:
             st.success(f"New CSV file created with ID: {new_file_id}")
-            return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
+            return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
         else:
             st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
             return None, None
@@ -100,7 +110,7 @@ def read_csv_from_drive(file_id):
             new_file_id = create_csv_in_drive()
             if new_file_id:
                 st.success(f"New CSV file created with ID: {new_file_id}")
-                return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
+                return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
             else:
                 st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
                 return None, None
@@ -126,6 +136,20 @@ def update_csv_in_drive(df, file_id):
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
 
+# Function to generate PO number
+def generate_po_number(df):
+    current_date = datetime.now()
+    year_month = current_date.strftime("%y%m")
+    
+    if df.empty:
+        sequence_number = 1
+    else:
+        last_po_number = df['PO Number'].iloc[-1]
+        last_sequence_number = int(last_po_number.split('-')[-1])
+        sequence_number = last_sequence_number + 1
+    
+    return f"RD-PO-{year_month}-{sequence_number:04d}"
+
 # Function to send email
 def send_email(sender_email, email_body):
     try:
@@ -133,7 +157,7 @@ def send_email(sender_email, email_body):
         message['to'] = RECIPIENT_EMAIL
         message['from'] = sender_email
         message['subject'] = 'New Purchase Request'
-        message.attach(MIMEText(email_body, 'plain'))
+        message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
         gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
@@ -150,12 +174,12 @@ def send_email(sender_email, email_body):
         return False
 
 # App title and instructions
-st.title("Purchase Request (PO) Application")
+st.title("R&D Purchase Request (PO) Application")
 
 with st.expander("Instructions", expanded=False):
     st.markdown("""
-    <div class="instructions">
-        <h4>How to use this application:</h4>
+    <div class="instructions card">
+        <h3>How to use this application:</h3>
         <ol>
             <li>Fill in all required fields in the form below.</li>
             <li>Click the 'Submit Request' button to process your request.</li>
@@ -163,6 +187,7 @@ with st.expander("Instructions", expanded=False):
             <li>An email will be sent to the purchasing department.</li>
             <li>Use the checkbox below the form to view all submitted requests.</li>
         </ol>
+        <p>Note: Each request will be assigned a unique PO number in the format RD-PO-YYMM-0001.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -179,7 +204,9 @@ if df is None:
     st.stop()
 
 # Input form
+st.markdown("<div class='card'>", unsafe_allow_html=True)
 with st.form("po_request_form"):
+    st.subheader("Purchase Request Form")
     col1, col2 = st.columns(2)
     
     with col1:
@@ -204,10 +231,14 @@ with st.form("po_request_form"):
     
     submitted = st.form_submit_button("Submit Request")
 
+st.markdown("</div>", unsafe_allow_html=True)
+
 if submitted:
     if requester and requester_email and link and description and attention_to:
+        po_number = generate_po_number(df)
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         new_data = {
+            "PO Number": po_number,
             "Requester": requester,
             "Requester Email": requester_email,
             "Request Date and Time": request_datetime,
@@ -232,23 +263,27 @@ if submitted:
         
         # Email body
         email_body = f"""
-        Dear Ordering,
-
-        R&D would like to order the following:
-
-        - Requester: {requester}
-        - Request Date and Time: {request_datetime}
-        - Link to Item(s): {link}
-        - Quantity of Item(s): {quantity}
-        - Shipment Address: {shipment_address}
-        - Attention To: {attention_to}
-        - Department: {department}
-        - Description of Use: {description}
-        - Classification Code: {classification}
-        - Urgency: {urgency}
-
-        Regards,
-        {requester}
+        <html>
+        <body>
+        <h2>New Purchase Request</h2>
+        <p>Dear Ordering,</p>
+        <p>R&D would like to order the following:</p>
+        <table border="1" cellpadding="5" cellspacing="0">
+            <tr><th align="left"><b>PO Number</b></th><td>{po_number}</td></tr>
+            <tr><th align="left"><b>Requester</b></th><td>{requester}</td></tr>
+            <tr><th align="left"><b>Request Date and Time</b></th><td>{request_datetime}</td></tr>
+            <tr><th align="left"><b>Link to Item(s)</b></th><td>{link}</td></tr>
+            <tr><th align="left"><b>Quantity of Item(s)</b></th><td>{quantity}</td></tr>
+            <tr><th align="left"><b>Shipment Address</b></th><td>{shipment_address}</td></tr>
+            <tr><th align="left"><b>Attention To</b></th><td>{attention_to}</td></tr>
+            <tr><th align="left"><b>Department</b></th><td>{department}</td></tr>
+            <tr><th align="left"><b>Description of Use</b></th><td>{description}</td></tr>
+            <tr><th align="left"><b>Classification Code</b></th><td>{classification}</td></tr>
+            <tr><th align="left"><b>Urgency</b></th><td>{urgency}</td></tr>
+        </table>
+        <p>Regards,<br>{requester}</p>
+        </body>
+        </html>
         """
         
         # Send email
@@ -258,7 +293,7 @@ if submitted:
             st.error("Failed to send email. Please contact the IT department.")
         
         st.subheader("Email Preview")
-        st.text_area("", email_body, height=300)
+        st.markdown(email_body, unsafe_allow_html=True)
     else:
         st.error("Please fill in all required fields.")
 
@@ -266,10 +301,12 @@ if submitted:
 show_summary = st.checkbox("Show Purchase Request Summary")
 
 if show_summary:
+    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
     st.subheader("Purchase Request Summary")
-    st.dataframe(df.style.set_properties(**{'background-color': '#f0f2f6', 'color': 'black'}))
+    st.dataframe(df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 Purchase Request Application. All rights reserved.")
+st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
 
