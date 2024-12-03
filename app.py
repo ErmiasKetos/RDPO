@@ -266,14 +266,13 @@ def force_refresh():
     st.rerun()
 
 # Sidebar
-st.sidebar.title("Application Controls")
+st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-### Instructions
 1. The application will automatically create a CSV file if one doesn't exist.
 2. Click the 'Update Records' button to manually refresh the data from Google Drive.
 3. Fill in the Purchase Request Form in the main area.
 4. Submit the form to create a new PO request.
-5. Use the checkbox below the form to view all submitted requests.
+5. Mention your project in the "Brief Description of Use" filed.
 """)
 
 # Force Refresh button
@@ -366,7 +365,7 @@ if submitted:
         email_body = f"""
         <html>
         <body>
-        <h2>New Purchase Request</h2>
+        <p><b>RE: New Purchase Request</b></p2>
         <p>Dear Ordering,</p>
         <p>R&D would like to order the following:</p>
         <table border="1" cellpadding="5" cellspacing="0">
