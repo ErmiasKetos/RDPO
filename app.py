@@ -398,24 +398,9 @@ if submitted:
     else:
         st.error("Please fill in all required fields.")
 
-# Summary table
-show_summary = st.checkbox("Show Purchase Request Summary")
 
-if show_summary:
-    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
-    st.subheader("Purchase Request Summary")
-    st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# Debug Information
-if st.checkbox("Show Debug Information"):
-    st.markdown("<div class='debug-info'>", unsafe_allow_html=True)
-    st.subheader("Debug Information")
-    for log in st.session_state.debug_info:
-        st.text(log)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
+st.markdown("© 2023 R&D Purchase Request Application.")
 
