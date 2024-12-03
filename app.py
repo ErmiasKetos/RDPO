@@ -59,7 +59,6 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
-
 # Function to create a new CSV file in Google Drive
 def create_csv_in_drive():
     try:
@@ -82,9 +81,19 @@ def create_csv_in_drive():
 
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
+    if file_id is None:
+        st.warning("No existing file ID. Creating a new CSV file...")
+        new_file_id = create_csv_in_drive()
+        if new_file_id:
+            st.success(f"New CSV file created with ID: {new_file_id}")
+            return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
+        else:
+            st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
+            return None, None
+
     try:
         file = drive_service.files().get_media(fileId=file_id).execute()
-        return pd.read_csv(io.StringIO(file.decode('utf-8')))
+        return pd.read_csv(io.StringIO(file.decode('utf-8'))), file_id
     except HttpError as e:
         if e.resp.status == 404:
             st.warning("CSV file not found in Google Drive. Creating a new one...")
@@ -116,7 +125,6 @@ def update_csv_in_drive(df, file_id):
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
-
 
 # Function to send email
 def send_email(sender_email, email_body):
