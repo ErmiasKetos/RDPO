@@ -106,6 +106,15 @@ def find_or_create_csv():
         st.error(f"Error finding or creating CSV in Google Drive: {str(e)}")
         return None
 
+def verify_file_exists(file_id):
+    try:
+        file = drive_service.files().get(fileId=file_id, fields='id, name').execute()
+        st.success(f"File verified: {file['name']} (ID: {file['id']})")
+        return True
+    except Exception as e:
+        st.error(f"Error verifying file: {str(e)}")
+        return False
+
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
     try:
@@ -140,6 +149,11 @@ def update_csv_in_drive(df, file_id):
             return False
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
+        if not verify_file_exists(file_id):
+            st.warning("CSV file not found. Attempting to create a new one.")
+            new_file_id = find_or_create_csv()
+            if new_file_id:
+                return update_csv_in_drive(df, new_file_id)
         return False
 
 # Function to generate PO number
@@ -202,17 +216,18 @@ st.sidebar.markdown("""
 """)
 
 # Find or create CSV file
-if 'drive_file_id' not in st.session_state:
+if 'drive_file_id' not in st.session_state or not verify_file_exists(st.session_state.drive_file_id):
     st.session_state.drive_file_id = find_or_create_csv()
 
 if st.session_state.drive_file_id:
-    if st.sidebar.button("Update Records"):
+    if st.sidebar.button("Update Records") or 'df' not in st.session_state:
         df = read_csv_from_drive(st.session_state.drive_file_id)
         if df is not None:
             st.session_state.df = df
             st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
         else:
             st.sidebar.error("Failed to update records. Please try again.")
+            st.session_state.drive_file_id = find_or_create_csv()
 else:
     st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
@@ -220,15 +235,6 @@ else:
 # Main content
 st.title("R&D Purchase Request (PO) Application")
 
-# Load existing purchase summary if not already loaded
-if 'df' not in st.session_state:
-    df = read_csv_from_drive(st.session_state.drive_file_id)
-    if df is not None:
-        st.session_state.df = df
-        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
-    else:
-        st.error("Unable to load the purchase summary. Please check your Google Drive permissions and try again later.")
-        st.stop()
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
