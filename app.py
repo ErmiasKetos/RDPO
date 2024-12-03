@@ -44,17 +44,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize Google services
+
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
 except GoogleAuthError as e:
     st.error(f"Google authentication error: {str(e)}")
-    st.error("Please make sure you have set up the Google client secret correctly in Streamlit secrets.")
+    st.error("Please follow the authorization process to resolve this issue.")
     st.stop()
 except Exception as e:
     st.error(f"Error initializing Google services: {str(e)}")
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
+
 
 # Function to read CSV from Google Drive
 def read_csv_from_drive():
