@@ -9,13 +9,24 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.
 def get_google_creds():
     creds = None
     if 'google_client_secret' in st.secrets:
-        client_config = json.loads(st.secrets['google_client_secret'])
+        try:
+            client_config = json.loads(st.secrets['google_client_secret'])
+        except json.JSONDecodeError as e:
+            st.error(f"Error parsing google_client_secret: {str(e)}")
+            st.error("Please check the formatting of your google_client_secret in Streamlit secrets.")
+            st.stop()
+
         flow = Flow.from_client_config(client_config, SCOPES)
         flow.redirect_uri = client_config['web']['redirect_uris'][0]
         
         if 'google_token' in st.secrets:
-            token_info = json.loads(st.secrets['google_token'])
-            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            try:
+                token_info = json.loads(st.secrets['google_token'])
+                creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            except json.JSONDecodeError as e:
+                st.error(f"Error parsing google_token: {str(e)}")
+                st.error("Please check the formatting of your google_token in Streamlit secrets.")
+                st.stop()
         
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
