@@ -2,13 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import base64
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # Page configuration
 st.set_page_config(page_title="Purchase Request Application", layout="wide")
