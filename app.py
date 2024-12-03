@@ -268,11 +268,10 @@ def force_refresh():
 # Sidebar
 st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-1. The application will automatically create a CSV file if one doesn't exist.
-2. Click the 'Update Records' button to manually refresh the data from Google Drive.
-3. Fill in the Purchase Request Form in the main area.
-4. Submit the form to create a new PO request.
-5. Mention your project in the "Brief Description of Use" filed.
+1. Click the 'Update Records' button to manually refresh the data from Google Drive.
+2. Fill in the Purchase Request Form in the main area.
+3. Submit the form to create a new PO request.
+4. Mention your project in the "Brief Description of Use" filed.
 """)
 
 # Force Refresh button
