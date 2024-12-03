@@ -1,84 +1,62 @@
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-import logging
-import importlib.metadata
+import streamlit as st
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+import json
+from google.auth.transport.requests import Request
 
-# Load environment variables
-load_dotenv()
+SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send']
 
-class Config:
-    APP_NAME = "R&D Purchase Order System"
-    APP_ICON = "🛒"
-    DEFAULT_ADDRESS = "420 S Hillview Dr, Milpitas, CA 95035"
-    DEFAULT_DEPARTMENT = "R&D"
-    CLASSIFICATION_CODES = [
-        "6051 - Lab Supplies (including Chemicals)",
-        "6052 - Testing (Outside Lab Validation)",
-        "6055 - Parts & Tools",
-        "6054 - Prototype",
-        "6053 - Other"
-    ]
-    URGENCY_LEVELS = ["Normal", "Urgent"]
+def get_google_creds():
+    creds = None
+    if 'google_client_secret' in st.secrets:
+        try:
+            client_config = json.loads(st.secrets['google_client_secret'])
+        except json.JSONDecodeError as e:
+            st.error(f"Error parsing google_client_secret: {str(e)}")
+            st.error("Please check the formatting of your google_client_secret in Streamlit secrets.")
+            st.stop()
+
+        flow = Flow.from_client_config(client_config, SCOPES)
+        flow.redirect_uri = client_config['web']['redirect_uris'][0]
+        
+        if 'google_token' in st.secrets:
+            try:
+                token_info = json.loads(st.secrets['google_token'])
+                creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            except json.JSONDecodeError as e:
+                st.error(f"Error parsing google_token: {str(e)}")
+                st.error("Please check the formatting of your google_token in Streamlit secrets.")
+                st.stop()
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                st.error("Google token is missing or invalid. Please reauthorize the application.")
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.markdown(f"[Click here to authorize]({auth_url})")
+                
+                code = st.text_input("Enter the authorization code:")
+                if code:
+                    flow.fetch_token(code=code)
+                    creds = flow.credentials
+                    st.success("Authorization successful! Please add the following token to your Streamlit secrets:")
+                    st.code(json.dumps(json.loads(creds.to_json()), indent=2))
+                    st.stop()
+                else:
+                    st.stop()
+    else:
+        st.error("Google client secret is not set in Streamlit secrets.")
+        st.stop()
     
-    # File paths
-    BASE_DIR = Path(__file__).resolve().parent
-    CSV_FILE = BASE_DIR / "data" / "purchase_summary.csv"
-    LOG_FILE = BASE_DIR / "logs" / "app.log"
-    
-    # Google API configuration
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
-    CLIENT_CONFIG = {
-        "web": {
-            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost:8501/"]
-        }
-    }
-    DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
+    return creds
 
-    @staticmethod
-    def get_streamlit_version():
-        return importlib.metadata.version('streamlit')
+def get_drive_service():
+    creds = get_google_creds()
+    return build('drive', 'v3', credentials=creds)
 
-# Setup logging
-logging.basicConfig(
-    filename=Config.LOG_FILE,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+def get_gmail_service():
+    creds = get_google_creds()
+    return build('gmail', 'v1', credentials=creds)
 
-# Custom styles
-CUSTOM_STYLES = """
-<style>
-    .stApp {
-        max-width: 1200px;
-        margin: 0 auto;
-    }
-    .instruction-box {
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-    .form-section {
-        background-color: #ffffff;
-        border-radius: 5px;
-        padding: 20px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    .required-field {
-        color: red;
-        margin-left: 5px;
-    }
-    .email-preview {
-        background-color: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 5px;
-        padding: 10px;
-    }
-</style>
-"""
