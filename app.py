@@ -13,7 +13,7 @@ from googleapiclient.http import MediaIoBaseUpload
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
-RECIPIENT_EMAIL = 'ermias@ketos.co'
+RECIPIENT_EMAIL = 'ermias@ketos.co, girma.seifu@ketos.co '
 
 # Page configuration
 st.set_page_config(page_title="R&D Purchase Request Application", layout="wide")
