@@ -8,7 +8,6 @@ from email.mime.multipart import MIMEMultipart
 from google_auth import get_drive_service, get_gmail_service
 from google.auth.exceptions import GoogleAuthError
 
-
 # Constants
 DRIVE_FILE_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'
 RECIPIENT_EMAIL = 'ermias@ketos.co'
@@ -45,7 +44,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize Google services
-
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
