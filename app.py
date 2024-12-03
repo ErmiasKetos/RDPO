@@ -339,7 +339,7 @@ if submitted:
         po_number = generate_po_number(st.session_state.df)
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         new_data = {
-            ""PO Number": po_number,
+            "PO Number": po_number,
             "Requester": requester,
             "Requester Email": requester_email,
             "Request Date and Time": request_datetime,
