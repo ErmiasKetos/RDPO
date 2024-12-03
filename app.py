@@ -88,20 +88,7 @@ def log_debug_info(message):
         st.session_state.debug_info = []
     st.session_state.debug_info.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
-def verify_file_exists_and_accessible(file_id):
-    try:
-        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size, trashed').execute()
-        if file.get('trashed', False):
-            log_debug_info(f"File {file_id} exists but is in the trash.")
-            return False
-        log_debug_info(f"File verified: {file['name']} (ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes)")
-        return True
-    except HttpError as error:
-        if error.resp.status == 404:
-            log_debug_info(f"File {file_id} not found.")
-        else:
-            log_debug_info(f"Error verifying file {file_id}: {str(error)}")
-        return False
+
         
 
 # Function to find or create the CSV file in Google Drive
