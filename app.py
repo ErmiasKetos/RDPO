@@ -10,8 +10,6 @@ from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
-
-
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
@@ -101,6 +99,7 @@ def find_or_create_csv():
                 media_body=media,
                 fields='id'
             ).execute()
+            st.success(f"New CSV file created in Google Drive with ID: {file.get('id')}")
             return file.get('id')
     except Exception as e:
         st.error(f"Error finding or creating CSV in Google Drive: {str(e)}")
@@ -180,12 +179,14 @@ def send_email(sender_email, subject, email_body):
 # Sidebar
 st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-1. Click the 'Update Records' button to manually refresh the data from Google Drive.
-2. Fill in the Purchase Request Form in the main area.
-3. Submit the form to create a new PO request.
-4. If you have any questions, please contact R&D OPs.
+1. The application will automatically create a CSV file if one doesn't exist.
+2. Click the 'Update Records' button to manually refresh the data from Google Drive.
+3. Fill in the Purchase Request Form in the main area.
+4. Submit the form to create a new PO request.
+5. If you have any questions, please contact R&D OPs.
 """)
 
+# Find or create CSV file
 if 'drive_file_id' not in st.session_state:
     st.session_state.drive_file_id = find_or_create_csv()
 
@@ -276,7 +277,7 @@ if submitted:
         email_body = f"""
         <html>
         <body>
-        <p><b>RE:New Purchase Request</b></p>
+        <p></b>RE:New Purchase Request</b></p>
         <p>Dear Ordering,</p>
         <p>R&D would like to order the following:</p>
         <table border="1" cellpadding="5" cellspacing="0">
@@ -312,5 +313,5 @@ if submitted:
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application.")
+st.markdown("© 2023 R&D Purchase Request Application ")
 
