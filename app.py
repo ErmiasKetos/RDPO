@@ -69,74 +69,52 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
-# Function to list files in the specified folder
-def list_files_in_folder(folder_id):
+# Function to find or create the CSV file in Google Drive
+def find_or_create_csv():
     try:
+        # Search for the file in the specified folder
         results = drive_service.files().list(
-            q=f"'{folder_id}' in parents and mimeType='text/csv'",
-            pageSize=10,
-            fields="nextPageToken, files(id, name)"
+            q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv'",
+            spaces='drive',
+            fields='files(id, name)'
         ).execute()
         files = results.get('files', [])
-        return files
-    except Exception as e:
-        st.error(f"Error listing files in folder: {str(e)}")
-        return []
 
-# Function to create a new CSV file in Google Drive
-def create_csv_in_drive():
-    try:
-        file_metadata = {
-            'name': DRIVE_FILE_NAME,
-            'parents': [DRIVE_FOLDER_ID],
-            'mimeType': 'text/csv'
-        }
-        content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
-        media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
-        file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id'
-        ).execute()
-        return file.get('id')
+        if files:
+            return files[0]['id']
+        else:
+            # If file doesn't exist, create it
+            file_metadata = {
+                'name': DRIVE_FILE_NAME,
+                'parents': [DRIVE_FOLDER_ID],
+                'mimeType': 'text/csv'
+            }
+            content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
+            media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
+            file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+            return file.get('id')
     except Exception as e:
-        st.error(f"Error creating CSV in Google Drive: {str(e)}")
+        st.error(f"Error finding or creating CSV in Google Drive: {str(e)}")
         return None
 
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
-    if file_id is None:
-        st.warning("No existing file ID. Attempting to create a new file...")
-        new_file_id = create_csv_in_drive()
-        if new_file_id:
-            st.success(f"New CSV file created with ID: {new_file_id}")
-            return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
-        else:
-            st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
-            return None, None
-
     try:
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
         df = pd.read_csv(io.BytesIO(file_content))
         st.success(f"CSV file successfully loaded with {len(df)} existing records.")
-        return df, file_id
+        return df
     except HttpError as e:
-        if e.resp.status == 404:
-            st.error(f"CSV file with ID {file_id} not found in Google Drive. Attempting to create a new file...")
-            new_file_id = create_csv_in_drive()
-            if new_file_id:
-                st.success(f"New CSV file created with ID: {new_file_id}")
-                return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
-            else:
-                st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
-                return None, None
-        else:
-            st.error(f"Error reading CSV from Google Drive: {str(e)}")
-        return None, None
+        st.error(f"Error reading CSV from Google Drive: {str(e)}")
+        return None
     except Exception as e:
         st.error(f"Unexpected error reading CSV from Google Drive: {str(e)}")
-        return None, None
+        return None
 
 # Function to update CSV in Google Drive
 def update_csv_in_drive(df, file_id):
@@ -203,7 +181,6 @@ with st.expander("Instructions", expanded=False):
     <div class="instructions card">
         <h3>How to use this application:</h3>
         <ol>
-            <li>Select the existing purchase summary file or create a new one.</li>
             <li>Fill in all required fields in the form below.</li>
             <li>Click the 'Submit Request' button to process your request.</li>
             <li>Your request will be saved and synced to Google Drive.</li>
@@ -216,33 +193,16 @@ with st.expander("Instructions", expanded=False):
 
 # Load existing purchase summary
 if 'drive_file_id' not in st.session_state:
-    st.session_state.drive_file_id = None
-
-# List files in the folder
-files = list_files_in_folder(DRIVE_FOLDER_ID)
-
-if files:
-    file_options = {file['name']: file['id'] for file in files}
-    file_options['Create new file'] = 'new'
-    selected_file = st.selectbox("Select the purchase summary file:", list(file_options.keys()))
-    
-    if selected_file == 'Create new file':
-        st.session_state.drive_file_id = create_csv_in_drive()
-    else:
-        st.session_state.drive_file_id = file_options[selected_file]
-else:
-    st.warning("No existing files found. Creating a new file...")
-    st.session_state.drive_file_id = create_csv_in_drive()
+    st.session_state.drive_file_id = find_or_create_csv()
 
 if st.session_state.drive_file_id:
-    df, _ = read_csv_from_drive(st.session_state.drive_file_id)
+    df = read_csv_from_drive(st.session_state.drive_file_id)
     if df is None:
-        st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
+        st.error("Unable to load the purchase summary. Please check your Google Drive permissions and try again later.")
         st.stop()
 else:
-    st.error("No file ID available. Please check your Google Drive permissions and try again.")
+    st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
-
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -306,7 +266,7 @@ if submitted:
         email_body = f"""
         <html>
         <body>
-        <p><b>Re: New Purchase Request</b></p>
+        <h2>New Purchase Request</h2>
         <p>Dear Ordering,</p>
         <p>R&D would like to order the following:</p>
         <table border="1" cellpadding="5" cellspacing="0">
