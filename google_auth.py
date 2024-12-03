@@ -1,19 +1,34 @@
 import streamlit as st
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+import json
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send']
 
 def get_google_creds():
     creds = None
     if 'google_client_secret' in st.secrets:
-        client_config = st.secrets['google_client_secret']
-        creds = service_account.Credentials.from_service_account_info(
-            client_config, scopes=SCOPES)
-    if not creds or not creds.valid:
-        st.error("Google credentials are not valid. Please set up the Google client secret in Streamlit secrets.")
+        client_config = json.loads(st.secrets['google_client_secret'])
+        flow = Flow.from_client_config(client_config, SCOPES)
+        flow.redirect_uri = client_config['web']['redirect_uris'][0]
+        
+        if 'google_token' in st.secrets:
+            creds = Credentials.from_authorized_user_info(json.loads(st.secrets['google_token']), SCOPES)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                st.error("Google token is missing or invalid. Please reauthorize the application.")
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.markdown(f"[Click here to authorize]({auth_url})")
+                st.stop()
+    else:
+        st.error("Google client secret is not set in Streamlit secrets.")
         st.stop()
+    
     return creds
 
 def get_drive_service():
@@ -23,6 +38,4 @@ def get_drive_service():
 def get_gmail_service():
     creds = get_google_creds()
     return build('gmail', 'v1', credentials=creds)
-
-
 
