@@ -11,6 +11,8 @@ from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
+st.cache_data.clear()
+
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
