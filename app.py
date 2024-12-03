@@ -10,7 +10,6 @@ from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 
 # Constants
-DRIVE_FILE_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
@@ -76,9 +75,9 @@ def create_csv_in_drive():
         return None
 
 # Function to read CSV from Google Drive
-def read_csv_from_drive():
+def read_csv_from_drive(file_id):
     try:
-        file = drive_service.files().get_media(fileId=DRIVE_FILE_ID).execute()
+        file = drive_service.files().get_media(fileId=file_id).execute()
         return pd.read_csv(io.StringIO(file.decode('utf-8')))
     except HttpError as e:
         if e.resp.status == 404:
@@ -86,26 +85,24 @@ def read_csv_from_drive():
             new_file_id = create_csv_in_drive()
             if new_file_id:
                 st.success(f"New CSV file created with ID: {new_file_id}")
-                global DRIVE_FILE_ID
-                DRIVE_FILE_ID = new_file_id
-                return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency'])
+                return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
             else:
                 st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
-                return None
+                return None, None
         else:
             st.error(f"Error reading CSV from Google Drive: {str(e)}")
-            return None
+            return None, None
     except Exception as e:
         st.error(f"Unexpected error reading CSV from Google Drive: {str(e)}")
-        return None
+        return None, None
 
 # Function to update CSV in Google Drive
-def update_csv_in_drive(df):
+def update_csv_in_drive(df, file_id):
     try:
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         media = drive_service.files().update(
-            fileId=DRIVE_FILE_ID,
+            fileId=file_id,
             media_body=io.BytesIO(csv_buffer.getvalue().encode()),
             fields='id'
         ).execute()
@@ -148,7 +145,13 @@ with st.expander("Instructions", expanded=False):
     """, unsafe_allow_html=True)
 
 # Load existing purchase summary
-df = read_csv_from_drive()
+if 'drive_file_id' not in st.session_state:
+    st.session_state.drive_file_id = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'  # Default file ID
+
+df, new_file_id = read_csv_from_drive(st.session_state.drive_file_id)
+if new_file_id:
+    st.session_state.drive_file_id = new_file_id
+
 if df is None:
     st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
     st.stop()
@@ -200,7 +203,7 @@ if submitted:
         df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
         
         # Update CSV in Google Drive
-        if update_csv_in_drive(df):
+        if update_csv_in_drive(df, st.session_state.drive_file_id):
             st.success("Request submitted and synced to Google Drive!")
         else:
             st.error("Failed to sync request to Google Drive. Please try again.")
