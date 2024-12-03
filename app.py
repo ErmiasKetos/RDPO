@@ -7,9 +7,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from google_auth import get_drive_service, get_gmail_service
 from google.auth.exceptions import GoogleAuthError
+from googleapiclient.errors import HttpError
 
 # Constants
 DRIVE_FILE_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'
+DRIVE_FILE_NAME = 'purchase_summary.csv'
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
@@ -44,7 +46,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize Google services
-
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
@@ -57,14 +58,45 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
+# Function to create a new CSV file in Google Drive
+def create_csv_in_drive():
+    try:
+        file_metadata = {
+            'name': DRIVE_FILE_NAME,
+            'mimeType': 'text/csv'
+        }
+        media = drive_service.files().create(
+            body=file_metadata,
+            media_body=io.BytesIO(b'Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'),
+            fields='id'
+        ).execute()
+        return media.get('id')
+    except Exception as e:
+        st.error(f"Error creating CSV in Google Drive: {str(e)}")
+        return None
 
 # Function to read CSV from Google Drive
 def read_csv_from_drive():
     try:
         file = drive_service.files().get_media(fileId=DRIVE_FILE_ID).execute()
         return pd.read_csv(io.StringIO(file.decode('utf-8')))
+    except HttpError as e:
+        if e.resp.status == 404:
+            st.warning("CSV file not found in Google Drive. Creating a new one...")
+            new_file_id = create_csv_in_drive()
+            if new_file_id:
+                st.success(f"New CSV file created with ID: {new_file_id}")
+                global DRIVE_FILE_ID
+                DRIVE_FILE_ID = new_file_id
+                return pd.DataFrame(columns=['Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency'])
+            else:
+                st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
+                return None
+        else:
+            st.error(f"Error reading CSV from Google Drive: {str(e)}")
+            return None
     except Exception as e:
-        st.error(f"Error reading CSV from Google Drive: {str(e)}")
+        st.error(f"Unexpected error reading CSV from Google Drive: {str(e)}")
         return None
 
 # Function to update CSV in Google Drive
@@ -118,7 +150,7 @@ with st.expander("Instructions", expanded=False):
 # Load existing purchase summary
 df = read_csv_from_drive()
 if df is None:
-    st.error("Unable to load the purchase summary. Please try again later.")
+    st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
     st.stop()
 
 # Input form
