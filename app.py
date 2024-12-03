@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import logging
 import pytz
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow  # Correct import
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -28,11 +28,10 @@ SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email'
 ]
 
-
 def create_flow():
     """Create OAuth flow with secure configuration"""
     client_config = {
-        "web": {  # Changed back to "web" from "installed"
+        "web": {
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
             "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -56,17 +55,21 @@ def init_google_services():
     try:
         if 'google_auth_credentials' not in st.session_state:
             flow = create_flow()
+            
+            # Get authorization URL with specific parameters
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
                 prompt='consent'
             )
             
+            # Display login button with improved styling
             st.markdown(
                 f'''
                 <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #dee2e6;">
                     <h2 style="color: #1a73e8;">Google Authentication Required</h2>
                     <p>Please authenticate with your Ketos email address to continue.</p>
+                    <p style="font-size: 14px; color: #666;">Note: You must be added as a test user to access this application.</p>
                     <a href="{auth_url}" target="_self">
                         <button style="
                             background-color: #1a73e8;
@@ -86,20 +89,56 @@ def init_google_services():
                 ''',
                 unsafe_allow_html=True
             )
+            
+            # Check for authorization code
+            query_params = st.experimental_get_query_params()
+            if 'code' in query_params:
+                try:
+                    flow.fetch_token(code=query_params['code'][0])
+                    st.session_state.google_auth_credentials = {
+                        'token': flow.credentials.token,
+                        'refresh_token': flow.credentials.refresh_token,
+                        'token_uri': flow.credentials.token_uri,
+                        'client_id': flow.credentials.client_id,
+                        'client_secret': flow.credentials.client_secret,
+                        'scopes': flow.credentials.scopes
+                    }
+                    st.experimental_set_query_params()
+                    st.rerun()
+                except Exception as e:
+                    logger.error(f"Error fetching token: {str(e)}")
+                    st.error("Failed to complete authentication. Please try again.")
+                    return None, None
+            
             return None, None
 
         # Use existing credentials
-        creds = Credentials.from_authorized_user_info(
-            st.session_state.google_auth_credentials,
-            SCOPES
-        )
-        
-        drive_service = build('drive', 'v3', credentials=creds)
-        gmail_service = build('gmail', 'v1', credentials=creds)
-        return drive_service, gmail_service
+        try:
+            creds = Credentials.from_authorized_user_info(
+                st.session_state.google_auth_credentials,
+                SCOPES
+            )
+            
+            drive_service = build('drive', 'v3', credentials=creds)
+            gmail_service = build('gmail', 'v1', credentials=creds)
+            
+            # Verify services are working
+            drive_service.files().list(pageSize=1).execute()
+            gmail_service.users().getProfile(userId='me').execute()
+            
+            return drive_service, gmail_service
+            
+        except Exception as e:
+            logger.error(f"Error with existing credentials: {str(e)}")
+            # Clear invalid credentials
+            if 'google_auth_credentials' in st.session_state:
+                del st.session_state.google_auth_credentials
+            st.error("Session expired. Please authenticate again.")
+            st.rerun()
+            return None, None
 
     except Exception as e:
-        logger.error(f"Error initializing Google services: {str(e)}")
+        logger.error(f"Error in authentication flow: {str(e)}")
         st.error(f"Authentication error. Please try again. Details: {str(e)}")
         return None, None
 
