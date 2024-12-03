@@ -69,6 +69,20 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
+# Function to list files in the specified folder
+def list_files_in_folder(folder_id):
+    try:
+        results = drive_service.files().list(
+            q=f"'{folder_id}' in parents and mimeType='text/csv'",
+            pageSize=10,
+            fields="nextPageToken, files(id, name)"
+        ).execute()
+        files = results.get('files', [])
+        return files
+    except Exception as e:
+        st.error(f"Error listing files in folder: {str(e)}")
+        return []
+
 # Function to create a new CSV file in Google Drive
 def create_csv_in_drive():
     try:
@@ -102,8 +116,9 @@ def read_csv_from_drive(file_id):
             return None, None
 
     try:
-        file = drive_service.files().get_media(fileId=file_id).execute()
-        df = pd.read_csv(io.StringIO(file.decode('utf-8')))
+        request = drive_service.files().get_media(fileId=file_id)
+        file_content = request.execute()
+        df = pd.read_csv(io.BytesIO(file_content))
         st.success(f"CSV file successfully loaded with {len(df)} existing records.")
         return df, file_id
     except HttpError as e:
@@ -137,7 +152,6 @@ def update_csv_in_drive(df, file_id):
     except Exception as e:
         st.error(f"Error updating CSV in Google Drive: {str(e)}")
         return False
-
 
 # Function to generate PO number
 def generate_po_number(df):
@@ -181,7 +195,6 @@ def send_email(sender_email, subject, email_body):
         st.error(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
-
 # App title and instructions
 st.title("R&D Purchase Request (PO) Application")
 
@@ -190,7 +203,7 @@ with st.expander("Instructions", expanded=False):
     <div class="instructions card">
         <h3>How to use this application:</h3>
         <ol>
-            <li>Ensure you have the correct Google Drive file ID for the purchase summary.</li>
+            <li>Select the existing purchase summary file or create a new one.</li>
             <li>Fill in all required fields in the form below.</li>
             <li>Click the 'Submit Request' button to process your request.</li>
             <li>Your request will be saved and synced to Google Drive.</li>
@@ -203,16 +216,32 @@ with st.expander("Instructions", expanded=False):
 
 # Load existing purchase summary
 if 'drive_file_id' not in st.session_state:
-    st.session_state.drive_file_id = st.text_input("Enter the Google Drive file ID for the purchase summary CSV:")
+    st.session_state.drive_file_id = None
 
-df, new_file_id = read_csv_from_drive(st.session_state.drive_file_id)
-if new_file_id:
-    st.session_state.drive_file_id = new_file_id
+# List files in the folder
+files = list_files_in_folder(DRIVE_FOLDER_ID)
 
-if df is None:
-    st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
+if files:
+    file_options = {file['name']: file['id'] for file in files}
+    file_options['Create new file'] = 'new'
+    selected_file = st.selectbox("Select the purchase summary file:", list(file_options.keys()))
+    
+    if selected_file == 'Create new file':
+        st.session_state.drive_file_id = create_csv_in_drive()
+    else:
+        st.session_state.drive_file_id = file_options[selected_file]
+else:
+    st.warning("No existing files found. Creating a new file...")
+    st.session_state.drive_file_id = create_csv_in_drive()
+
+if st.session_state.drive_file_id:
+    df, _ = read_csv_from_drive(st.session_state.drive_file_id)
+    if df is None:
+        st.error("Unable to load or create the purchase summary. Please check your Google Drive permissions and try again later.")
+        st.stop()
+else:
+    st.error("No file ID available. Please check your Google Drive permissions and try again.")
     st.stop()
-
 
 
 # Input form
