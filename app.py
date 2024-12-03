@@ -291,7 +291,7 @@ if submitted:
         if send_email(requester_email, f"Purchase request: {po_number}", email_body):
             st.success("Email sent successfully!")
         else:
-            st.error("Failed to send email. Please contact the IT department.")
+            st.error("Failed to send email. Please contact your department.")
         
         st.subheader("Email Preview")
         st.markdown(email_body, unsafe_allow_html=True)
@@ -301,5 +301,5 @@ if submitted:
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
+st.markdown("© 2023 R&D Purchase Request Application")
 
