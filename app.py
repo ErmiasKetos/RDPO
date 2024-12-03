@@ -15,6 +15,9 @@ import io
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info(f"Authorization URL: {auth_url}")
+logger.error(f"Error fetching token: {str(e)}")
+
 
 # Constants
 APP_URL = "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"
