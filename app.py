@@ -28,31 +28,35 @@ SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email'
 ]
 
+
 def create_flow():
     """Create OAuth flow with secure configuration"""
     client_config = {
-        "installed": {
+        "web": {  # Changed back to "web" from "installed"
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
             "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [APP_URL],
+            "redirect_uris": [
+                "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app/",
+                "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app/callback"
+            ],
+            "javascript_origins": ["https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"]
         }
     }
     
-    flow = InstalledAppFlow.from_client_config(
+    return Flow.from_client_config(
         client_config,
-        SCOPES,
-        redirect_uri=APP_URL
+        scopes=SCOPES,
+        redirect_uri="https://ztzvz35xfwxabgmvk6vp6i.streamlit.app/"
     )
-    return flow
 
 def init_google_services():
     """Initialize Google Drive and Gmail API services"""
     try:
         if 'google_auth_credentials' not in st.session_state:
             flow = create_flow()
-            authorization_url, _ = flow.authorization_url(
+            auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
                 prompt='consent'
@@ -60,17 +64,20 @@ def init_google_services():
             
             st.markdown(
                 f'''
-                <div style="text-align: center; padding: 20px;">
-                    <h2>Google Authentication</h2>
-                    <p>Click below to authenticate with your Ketos email</p>
-                    <a href="{authorization_url}" target="_self">
+                <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #dee2e6;">
+                    <h2 style="color: #1a73e8;">Google Authentication Required</h2>
+                    <p>Please authenticate with your Ketos email address to continue.</p>
+                    <a href="{auth_url}" target="_self">
                         <button style="
-                            background-color: #4285f4;
+                            background-color: #1a73e8;
                             color: white;
-                            padding: 10px 20px;
+                            padding: 12px 24px;
                             border: none;
-                            border-radius: 5px;
+                            border-radius: 4px;
                             cursor: pointer;
+                            font-size: 16px;
+                            font-weight: 500;
+                            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
                         ">
                             Sign in with Google
                         </button>
@@ -93,17 +100,8 @@ def init_google_services():
 
     except Exception as e:
         logger.error(f"Error initializing Google services: {str(e)}")
-        st.error(f"Error initializing Google services: {str(e)}")
+        st.error(f"Authentication error. Please try again. Details: {str(e)}")
         return None, None
-
-def get_user_email(service):
-    """Get user's email address from Gmail API"""
-    try:
-        profile = service.users().getProfile(userId='me').execute()
-        return profile['emailAddress']
-    except Exception as e:
-        logger.error(f"Error getting user email: {str(e)}")
-        return None
 
 def send_email(service, sender_email, po_data):
     """Send email using Gmail API"""
