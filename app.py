@@ -138,8 +138,15 @@ def send_email(sender_email, email_body):
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
         gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
         return True
+    except HttpError as error:
+        if error.resp.status == 403 and "accessNotConfigured" in str(error):
+            st.error("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
+            st.error("For instructions, refer to the error message above.")
+        else:
+            st.error(f"An error occurred while sending the email: {error}")
+        return False
     except Exception as e:
-        st.error(f"Error sending email: {str(e)}")
+        st.error(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
 # App title and instructions
