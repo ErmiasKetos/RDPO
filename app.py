@@ -241,9 +241,9 @@ st.sidebar.markdown("""
 # Force Refresh button
 if st.sidebar.button("Force Refresh"):
     st.cache_data.clear()
-    st.session_state.pop('drive_file_id', None)
-    st.session_state.pop('df', None)
-    st.experimental_rerun()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
 
 # Find or create CSV file
 if 'drive_file_id' not in st.session_state or not verify_file_accessibility(st.session_state.drive_file_id):
@@ -265,6 +265,7 @@ if st.session_state.drive_file_id:
 else:
     st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
+
 
 # Main content
 st.title("R&D Purchase Request (PO) Application")
