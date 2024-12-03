@@ -4,22 +4,24 @@ from datetime import datetime
 import os
 import logging
 import pytz
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import io
 from email.mime.text import MIMEText
 import base64
-
-
+import io
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# App configuration
+# Constants
 APP_URL = "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"
+DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
+PURCHASE_SUMMARY_FILE_NAME = "purchase_summary.csv"
+
+# OAuth 2.0 configuration
 SCOPES = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/gmail.send',
@@ -29,7 +31,7 @@ SCOPES = [
 def create_flow():
     """Create OAuth flow with secure configuration"""
     client_config = {
-        "installed": {  # Changed from "web" to "installed"
+        "installed": {
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
             "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -45,10 +47,10 @@ def create_flow():
     )
     return flow
 
-def init_auth():
-    """Initialize authentication"""
+def init_google_services():
+    """Initialize Google Drive and Gmail API services"""
     try:
-        if 'credentials' not in st.session_state:
+        if 'google_auth_credentials' not in st.session_state:
             flow = create_flow()
             authorization_url, _ = flow.authorization_url(
                 access_type='offline',
@@ -56,7 +58,6 @@ def init_auth():
                 prompt='consent'
             )
             
-            # Display login button with secure redirect
             st.markdown(
                 f'''
                 <div style="text-align: center; padding: 20px;">
@@ -78,67 +79,31 @@ def init_auth():
                 ''',
                 unsafe_allow_html=True
             )
-            return None
+            return None, None
 
         # Use existing credentials
-        credentials = Credentials.from_authorized_user_info(
-            st.session_state.credentials,
+        creds = Credentials.from_authorized_user_info(
+            st.session_state.google_auth_credentials,
             SCOPES
         )
         
-        if credentials and credentials.valid:
-            return credentials
-        
-        if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
-            st.session_state.credentials = {
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }
-            return credentials
-            
-        return None
-
-    except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        st.error("Authentication failed. Please try again.")
-        return None
-
-def build_services(credentials):
-    """Build Google services with credentials"""
-    try:
-        drive_service = build('drive', 'v3', credentials=credentials)
-        gmail_service = build('gmail', 'v1', credentials=credentials)
+        drive_service = build('drive', 'v3', credentials=creds)
+        gmail_service = build('gmail', 'v1', credentials=creds)
         return drive_service, gmail_service
+
     except Exception as e:
-        logger.error(f"Error building services: {str(e)}")
+        logger.error(f"Error initializing Google services: {str(e)}")
+        st.error(f"Error initializing Google services: {str(e)}")
         return None, None
 
-def main():
-    st.set_page_config(
-        page_title="Purchase Order Request Form",
-        page_icon="🛍️",
-        layout="wide"
-    )
-
-    # Get authentication
-    credentials = init_auth()
-    
-    if not credentials:
-        return
-    
-    # Build services
-    drive_service, gmail_service = build_services(credentials)
-    
-    if not drive_service or not gmail_service:
-        st.error("Failed to initialize Google services. Please try again.")
-        return
-
-    # Your main app code goes here...
+def get_user_email(service):
+    """Get user's email address from Gmail API"""
+    try:
+        profile = service.users().getProfile(userId='me').execute()
+        return profile['emailAddress']
+    except Exception as e:
+        logger.error(f"Error getting user email: {str(e)}")
+        return None
 
 def send_email(service, sender_email, po_data):
     """Send email using Gmail API"""
@@ -179,42 +144,14 @@ Regards,
         logger.error(f"Error sending email: {str(e)}")
         return False
 
-def load_purchase_summary(service):
-    """Load purchase summary from Google Drive"""
-    try:
-        # Search for the file
-        results = service.files().list(
-            q=f"name='{PURCHASE_SUMMARY_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents",
-            fields="files(id, name)"
-        ).execute()
-
-        if not results['files']:
-            # Create new DataFrame if file doesn't exist
-            return pd.DataFrame(columns=[
-                'Requester', 'Request_DateTime', 'Link', 'Quantity', 'Address',
-                'Attention_To', 'Department', 'Description', 'Classification',
-                'Urgency'
-            ])
-
-        # Download existing file
-        file_id = results['files'][0]['id']
-        request = service.files().get_media(fileId=file_id)
-        content = request.execute()
-        return pd.read_csv(io.StringIO(content.decode('utf-8')))
-
-    except Exception as e:
-        logger.error(f"Error loading purchase summary: {str(e)}")
-        raise
-
-def save_to_drive(service, df):
-    """Save DataFrame to Google Drive"""
+def update_drive_file(service, df):
+    """Update or create file in Google Drive"""
     try:
         # Convert DataFrame to CSV
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         csv_content = csv_buffer.getvalue()
 
-        # Prepare the file metadata and media
         file_metadata = {
             'name': PURCHASE_SUMMARY_FILE_NAME,
             'parents': [DRIVE_FOLDER_ID]
@@ -233,25 +170,45 @@ def save_to_drive(service, df):
         ).execute()
 
         if results['files']:
-            # Update existing file
             file_id = results['files'][0]['id']
             service.files().update(
                 fileId=file_id,
                 media_body=media
             ).execute()
         else:
-            # Create new file
             service.files().create(
                 body=file_metadata,
                 media_body=media,
                 fields='id'
             ).execute()
-
         return True
+    except Exception as e:
+        logger.error(f"Error updating Drive file: {str(e)}")
+        return False
+
+def load_purchase_summary(service):
+    """Load existing purchase summary from Drive"""
+    try:
+        results = service.files().list(
+            q=f"name='{PURCHASE_SUMMARY_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents",
+            fields="files(id)"
+        ).execute()
+
+        if not results['files']:
+            return pd.DataFrame(columns=[
+                'Requester', 'Request_DateTime', 'Link', 'Quantity', 'Address',
+                'Attention_To', 'Department', 'Description', 'Classification',
+                'Urgency'
+            ])
+
+        file_id = results['files'][0]['id']
+        request = service.files().get_media(fileId=file_id)
+        content = request.execute()
+        return pd.read_csv(io.StringIO(content.decode('utf-8')))
 
     except Exception as e:
-        logger.error(f"Error saving to Drive: {str(e)}")
-        return False
+        logger.error(f"Error loading purchase summary: {str(e)}")
+        raise
 
 def main():
     st.set_page_config(
@@ -264,7 +221,6 @@ def main():
     drive_service, gmail_service = init_google_services()
 
     if not drive_service or not gmail_service:
-        st.error("⚠️ Unable to access Google services. Please log in to continue.")
         return
 
     # Get user email
@@ -330,9 +286,9 @@ def main():
                 'Urgency': urgency
             }
 
-            # Update DataFrame and save to Drive
+            # Update Drive file
             purchase_df = pd.concat([purchase_df, pd.DataFrame([new_data])], ignore_index=True)
-            if save_to_drive(drive_service, purchase_df):
+            if update_drive_file(drive_service, purchase_df):
                 # Send email
                 if send_email(gmail_service, user_email, new_data):
                     st.success("✅ Purchase request submitted and email sent successfully!")
