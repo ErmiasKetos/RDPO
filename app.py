@@ -276,7 +276,7 @@ if submitted:
         email_body = f"""
         <html>
         <body>
-        <p><b>New Purchase Request</b></p>
+        <p><b>RE:New Purchase Request</b></p>
         <p>Dear Ordering,</p>
         <p>R&D would like to order the following:</p>
         <table border="1" cellpadding="5" cellspacing="0">
