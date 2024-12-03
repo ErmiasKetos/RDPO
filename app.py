@@ -184,7 +184,7 @@ st.sidebar.markdown("""
 1. Click the 'Update Records' button to manually refresh the data from Google Drive.
 2. Fill in the Purchase Request Form in the main area.
 3. Submit the form to create a new PO request.
-4. Use the checkbox below the form to view all submitted requests.
+4. If you have any questions, please contact R&D OPs.
 """)
 
 if 'drive_file_id' not in st.session_state:
@@ -302,23 +302,16 @@ if submitted:
         if send_email(requester_email, f"Purchase request: {po_number}", email_body):
             st.success("Email sent successfully!")
         else:
-            st.error("Failed to send email. Please contact the IT department.")
+            st.error("Failed to send email. Please contact your department.")
         
         st.subheader("Email Preview")
         st.markdown(email_body, unsafe_allow_html=True)
     else:
         st.error("Please fill in all required fields.")
 
-# Summary table
-show_summary = st.checkbox("Show Purchase Request Summary")
 
-if show_summary:
-    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
-    st.subheader("Purchase Request Summary")
-    st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
+st.markdown("© 2023 R&D Purchase Request Application.")
 
