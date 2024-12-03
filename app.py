@@ -12,161 +12,133 @@ import io
 from email.mime.text import MIMEText
 import base64
 
-# Important: This allows OAuth to work in development
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Constants
+# App configuration
 APP_URL = "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"
-DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
-
-# Simplified scopes
 SCOPES = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/userinfo.email'
 ]
 
-def get_google_auth_flow():
-    """Create and configure OAuth flow"""
+def create_flow():
+    """Create OAuth flow with secure configuration"""
     client_config = {
-        "web": {
+        "installed": {  # Changed from "web" to "installed"
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
             "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [f"{APP_URL}/"],
-            "javascript_origins": [APP_URL]
+            "redirect_uris": [APP_URL],
         }
     }
     
-    flow = Flow.from_client_config(
+    flow = InstalledAppFlow.from_client_config(
         client_config,
-        scopes=SCOPES,
-        redirect_uri=f"{APP_URL}/"
+        SCOPES,
+        redirect_uri=APP_URL
     )
     return flow
 
-def init_google_services():
-    """Initialize Google Drive and Gmail API services"""
+def init_auth():
+    """Initialize authentication"""
     try:
-        # Check if already authenticated
-        if 'google_auth_credentials' in st.session_state:
-            try:
-                creds = Credentials.from_authorized_user_info(
-                    st.session_state.google_auth_credentials,
-                    SCOPES
-                )
-                drive_service = build('drive', 'v3', credentials=creds)
-                gmail_service = build('gmail', 'v1', credentials=creds)
-                return drive_service, gmail_service
-            except Exception:
-                # Clear invalid credentials
-                del st.session_state.google_auth_credentials
-        
-        # Start new authentication flow
-        flow = get_google_auth_flow()
-        
-        # Handle OAuth callback
-        query_params = st.experimental_get_query_params()
-        if 'code' in query_params:
-            try:
-                flow.fetch_token(code=query_params['code'][0])
-                credentials = flow.credentials
-                
-                st.session_state.google_auth_credentials = {
-                    'token': credentials.token,
-                    'refresh_token': credentials.refresh_token,
-                    'token_uri': credentials.token_uri,
-                    'client_id': credentials.client_id,
-                    'client_secret': credentials.client_secret,
-                    'scopes': credentials.scopes
-                }
-                
-                st.experimental_set_query_params()
-                
-                # Build services with new credentials
-                drive_service = build('drive', 'v3', credentials=credentials)
-                gmail_service = build('gmail', 'v1', credentials=credentials)
-                return drive_service, gmail_service
+        if 'credentials' not in st.session_state:
+            flow = create_flow()
+            authorization_url, _ = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
             
-            except Exception as e:
-                st.error(f"Authentication failed: {str(e)}")
-                return None, None
-        
-        # Generate authorization URL
-        auth_url, _ = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true'
+            # Display login button with secure redirect
+            st.markdown(
+                f'''
+                <div style="text-align: center; padding: 20px;">
+                    <h2>Google Authentication</h2>
+                    <p>Click below to authenticate with your Ketos email</p>
+                    <a href="{authorization_url}" target="_self">
+                        <button style="
+                            background-color: #4285f4;
+                            color: white;
+                            padding: 10px 20px;
+                            border: none;
+                            border-radius: 5px;
+                            cursor: pointer;
+                        ">
+                            Sign in with Google
+                        </button>
+                    </a>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+            return None
+
+        # Use existing credentials
+        credentials = Credentials.from_authorized_user_info(
+            st.session_state.credentials,
+            SCOPES
         )
         
-        # Display login button
-        st.markdown(
-            """
-            <div style='padding: 20px; border-radius: 5px; border: 1px solid #ccc; background-color: #f8f9fa;'>
-                <h3 style='color: #1a73e8;'>🔐 Authentication Required</h3>
-                <p>Please sign in with your Google account to continue.</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        if credentials and credentials.valid:
+            return credentials
         
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button(
-                "🔑 Sign in with Google",
-                key="google_auth",
-                use_container_width=True,
-            ):
-                st.markdown(
-                    f"""
-                    <meta http-equiv="refresh" content="0; url={auth_url}">
-                    <p>Redirecting to Google login...</p>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.stop()
-        
-        return None, None
-        
+        if credentials and credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+            st.session_state.credentials = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            return credentials
+            
+        return None
+
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
-        st.error("An error occurred during authentication. Please try again.")
+        st.error("Authentication failed. Please try again.")
+        return None
+
+def build_services(credentials):
+    """Build Google services with credentials"""
+    try:
+        drive_service = build('drive', 'v3', credentials=credentials)
+        gmail_service = build('gmail', 'v1', credentials=credentials)
+        return drive_service, gmail_service
+    except Exception as e:
+        logger.error(f"Error building services: {str(e)}")
         return None, None
 
-def check_google_services():
-    """Test Google services connection"""
-    drive_service, gmail_service = init_google_services()
-    
-    if not drive_service or not gmail_service:
-        st.warning("⚠️ Not authenticated. Please sign in.")
-        return False
-    
-    try:
-        # Test Drive API
-        drive_service.files().list(pageSize=1).execute()
-        # Test Gmail API
-        gmail_service.users().getProfile(userId='me').execute()
-        return True
-    except Exception as e:
-        logger.error(f"Service check failed: {str(e)}")
-        return False
-
-# Add this at the start of your main app code
 def main():
     st.set_page_config(
         page_title="Purchase Order Request Form",
         page_icon="🛍️",
         layout="wide"
     )
+
+    # Get authentication
+    credentials = init_auth()
     
-    # Check authentication
-    if not check_google_services():
+    if not credentials:
+        return
+    
+    # Build services
+    drive_service, gmail_service = build_services(credentials)
+    
+    if not drive_service or not gmail_service:
+        st.error("Failed to initialize Google services. Please try again.")
         return
 
+    # Your main app code goes here...
 
 def send_email(service, sender_email, po_data):
     """Send email using Gmail API"""
