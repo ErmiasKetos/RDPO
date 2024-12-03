@@ -6,6 +6,7 @@ import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from google_auth import get_drive_service, get_gmail_service
+from google.auth.exceptions import GoogleAuthError
 
 # Constants
 DRIVE_FILE_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'
@@ -43,12 +44,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize Google services
+
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
+except GoogleAuthError as e:
+    st.error(f"Google authentication error: {str(e)}")
+    st.error("Please make sure you have set up the Google client secret correctly in Streamlit secrets.")
+    st.stop()
 except Exception as e:
     st.error(f"Error initializing Google services: {str(e)}")
-    st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly in Streamlit secrets.")
+    st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
 # Function to read CSV from Google Drive
