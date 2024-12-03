@@ -10,6 +10,8 @@ from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
+
+
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
@@ -52,6 +54,9 @@ st.markdown("""
     }
     h1, h2, h3 {
         color: #2c3e50;
+    }
+    .sidebar .stButton > button {
+        background-color: #3498db;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -107,7 +112,6 @@ def read_csv_from_drive(file_id):
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
         df = pd.read_csv(io.BytesIO(file_content))
-        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
         return df
     except HttpError as e:
         st.error(f"Error reading CSV from Google Drive: {str(e)}")
@@ -173,36 +177,43 @@ def send_email(sender_email, subject, email_body):
         st.error(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
-# App title and instructions
-st.title("R&D Purchase Request (PO) Application")
+# Sidebar
+st.sidebar.title("Application Controls")
+st.sidebar.markdown("""
+### Instructions
+1. Click the 'Update Records' button to manually refresh the data from Google Drive.
+2. Fill in the Purchase Request Form in the main area.
+3. Submit the form to create a new PO request.
+4. Use the checkbox below the form to view all submitted requests.
+""")
 
-with st.expander("Instructions", expanded=False):
-    st.markdown("""
-    <div class="instructions card">
-        <h3>How to use this application:</h3>
-        <ol>
-            <li>Fill in all required fields in the form below.</li>
-            <li>Click the 'Submit Request' button to process your request.</li>
-            <li>Your request will be saved and synced to Google Drive.</li>
-            <li>An email will be sent to the purchasing department.</li>
-            <li>Use the checkbox below the form to view all submitted requests.</li>
-        </ol>
-        <p>Note: Each request will be assigned a unique PO number in the format RD-PO-YYMM-0001.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Load existing purchase summary
 if 'drive_file_id' not in st.session_state:
     st.session_state.drive_file_id = find_or_create_csv()
 
 if st.session_state.drive_file_id:
-    df = read_csv_from_drive(st.session_state.drive_file_id)
-    if df is None:
-        st.error("Unable to load the purchase summary. Please check your Google Drive permissions and try again later.")
-        st.stop()
+    if st.sidebar.button("Update Records"):
+        df = read_csv_from_drive(st.session_state.drive_file_id)
+        if df is not None:
+            st.session_state.df = df
+            st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
+        else:
+            st.sidebar.error("Failed to update records. Please try again.")
 else:
     st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
+
+# Main content
+st.title("R&D Purchase Request (PO) Application")
+
+# Load existing purchase summary if not already loaded
+if 'df' not in st.session_state:
+    df = read_csv_from_drive(st.session_state.drive_file_id)
+    if df is not None:
+        st.session_state.df = df
+        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
+    else:
+        st.error("Unable to load the purchase summary. Please check your Google Drive permissions and try again later.")
+        st.stop()
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -236,7 +247,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 if submitted:
     if requester and requester_email and link and description and attention_to:
-        po_number = generate_po_number(df)
+        po_number = generate_po_number(st.session_state.df)
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         new_data = {
             "PO Number": po_number,
@@ -254,10 +265,10 @@ if submitted:
         }
         
         # Append to DataFrame
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
         
         # Update CSV in Google Drive
-        if update_csv_in_drive(df, st.session_state.drive_file_id):
+        if update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id):
             st.success("Request submitted and synced to Google Drive!")
         else:
             st.error("Failed to sync request to Google Drive. Please try again.")
@@ -291,15 +302,23 @@ if submitted:
         if send_email(requester_email, f"Purchase request: {po_number}", email_body):
             st.success("Email sent successfully!")
         else:
-            st.error("Failed to send email. Please contact your department.")
+            st.error("Failed to send email. Please contact the IT department.")
         
         st.subheader("Email Preview")
         st.markdown(email_body, unsafe_allow_html=True)
     else:
         st.error("Please fill in all required fields.")
 
+# Summary table
+show_summary = st.checkbox("Show Purchase Request Summary")
+
+if show_summary:
+    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
+    st.subheader("Purchase Request Summary")
+    st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application")
+st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
 
