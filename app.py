@@ -178,9 +178,8 @@ def send_email(sender_email, subject, email_body):
         return False
 
 # Sidebar
-st.sidebar.title("Application Controls")
+st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-### Instructions
 1. Click the 'Update Records' button to manually refresh the data from Google Drive.
 2. Fill in the Purchase Request Form in the main area.
 3. Submit the form to create a new PO request.
