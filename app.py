@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
-APP_URL = "https://<your-app-name>.streamlit.app"
+APP_URL = "https://ztzvz35xfwxabgmvk6vp6i.streamlit.app"
 DRIVE_FOLDER_ID = "1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ"
 PURCHASE_SUMMARY_FILE_NAME = "purchase_summary.csv"
 AUTHORIZED_DOMAIN = "ketos.co"  # Only allow emails from this domain
