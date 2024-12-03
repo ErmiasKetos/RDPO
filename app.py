@@ -268,25 +268,7 @@ else:
 
 
 # Main content
-if 'drive_file_id' not in st.session_state or not verify_file_exists_and_accessible(st.session_state.get('drive_file_id')):
-    st.session_state.drive_file_id = find_or_create_csv()
 
-if st.session_state.get('drive_file_id'):
-    if verify_file_exists_and_accessible(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
-            df = read_csv_from_drive(st.session_state.drive_file_id)
-            if df is not None:
-                st.session_state.df = df
-                st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
-            else:
-                st.sidebar.error("Failed to update records. Please try again.")
-                st.session_state.drive_file_id = find_or_create_csv()
-    else:
-        st.error("The CSV file is not accessible. Attempting to create a new one.")
-        st.session_state.drive_file_id = find_or_create_csv()
-else:
-    st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
-    st.stop()
     
 st.title("R&D Purchase Request (PO) Application")
 
