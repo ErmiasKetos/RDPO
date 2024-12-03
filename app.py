@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -11,6 +10,7 @@ from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
+# Clear Streamlit cache
 st.cache_data.clear()
 
 # Constants
@@ -59,6 +59,14 @@ st.markdown("""
     .sidebar .stButton > button {
         background-color: #3498db;
     }
+    .debug-info {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        margin-top: 20px;
+        font-family: monospace;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,32 +83,37 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
-def verify_file_accessibility(file_id):
-    try:
-        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size').execute()
-        log_debug_info(f"File is accessible - Name: {file['name']}, ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
-        return True
-    except Exception as e:
-        log_debug_info(f"Error accessing file: {str(e)}")
-        return False
-
+def log_debug_info(message):
+    if 'debug_info' not in st.session_state:
+        st.session_state.debug_info = []
+    st.session_state.debug_info.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
 # Function to find or create the CSV file in Google Drive
 def find_or_create_csv():
     try:
-        # Search for the file in the specified folder
+        log_debug_info("Searching for existing CSV file")
         results = drive_service.files().list(
             q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv'",
             spaces='drive',
-            fields='files(id, name)'
+            fields='files(id, name, modifiedTime, size)'
         ).execute()
         files = results.get('files', [])
 
         if files:
-            st.success(f"Existing CSV file found with ID: {files[0]['id']}")
-            return files[0]['id']
+            file = files[0]
+            file_id = file['id']
+            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
+            
+            # Attempt to read the file content
+            try:
+                content = drive_service.files().get_media(fileId=file_id).execute()
+                log_debug_info(f"File content successfully retrieved. Content length: {len(content)} bytes")
+            except Exception as e:
+                log_debug_info(f"Error reading file content: {str(e)}")
+            
+            return file_id
         else:
-            # If file doesn't exist, create it
+            log_debug_info("No existing CSV file found. Creating a new one.")
             file_metadata = {
                 'name': DRIVE_FILE_NAME,
                 'parents': [DRIVE_FOLDER_ID],
@@ -113,39 +126,42 @@ def find_or_create_csv():
                 media_body=media,
                 fields='id'
             ).execute()
-            st.success(f"New CSV file created in Google Drive with ID: {file.get('id')}")
-            return file.get('id')
+            new_file_id = file.get('id')
+            log_debug_info(f"New CSV file created with ID: {new_file_id}")
+            return new_file_id
     except Exception as e:
-        st.error(f"Error finding or creating CSV in Google Drive: {str(e)}")
+        log_debug_info(f"Error in find_or_create_csv: {str(e)}")
         return None
 
-def verify_file_exists(file_id):
+def verify_file_accessibility(file_id):
     try:
-        file = drive_service.files().get(fileId=file_id, fields='id, name').execute()
-        st.success(f"File verified: {file['name']} (ID: {file['id']})")
+        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size').execute()
+        log_debug_info(f"File is accessible - Name: {file['name']}, ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
         return True
     except Exception as e:
-        st.error(f"Error verifying file: {str(e)}")
+        log_debug_info(f"Error accessing file: {str(e)}")
         return False
 
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
     try:
+        log_debug_info(f"Attempting to read CSV file with ID: {file_id}")
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
         df = pd.read_csv(io.BytesIO(file_content))
-        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
+        log_debug_info(f"CSV file successfully loaded with {len(df)} records")
         return df
     except HttpError as e:
-        st.error(f"Error reading CSV from Google Drive: {str(e)}")
+        log_debug_info(f"HttpError reading CSV from Google Drive: {str(e)}")
         return None
     except Exception as e:
-        st.error(f"Unexpected error reading CSV from Google Drive: {str(e)}")
+        log_debug_info(f"Unexpected error reading CSV from Google Drive: {str(e)}")
         return None
 
 # Function to update CSV in Google Drive
 def update_csv_in_drive(df, file_id):
     try:
+        log_debug_info(f"Attempting to update CSV file with ID: {file_id}")
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         media = MediaIoBaseUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
@@ -155,18 +171,13 @@ def update_csv_in_drive(df, file_id):
         ).execute()
         
         if updated_file:
-            st.success(f"CSV file successfully updated in Google Drive. File ID: {updated_file['id']}")
+            log_debug_info(f"CSV file successfully updated. File ID: {updated_file['id']}")
             return True
         else:
-            st.error("Failed to update CSV file in Google Drive.")
+            log_debug_info("Failed to update CSV file in Google Drive.")
             return False
     except Exception as e:
-        st.error(f"Error updating CSV in Google Drive: {str(e)}")
-        if not verify_file_exists(file_id):
-            st.warning("CSV file not found. Attempting to create a new one.")
-            new_file_id = find_or_create_csv()
-            if new_file_id:
-                return update_csv_in_drive(df, new_file_id)
+        log_debug_info(f"Error updating CSV in Google Drive: {str(e)}")
         return False
 
 # Function to generate PO number
@@ -201,28 +212,22 @@ def send_email(sender_email, subject, email_body):
         sent_message = gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
         
         if sent_message:
-            st.success(f"Email sent successfully! Message ID: {sent_message['id']}")
+            log_debug_info(f"Email sent successfully. Message ID: {sent_message['id']}")
             return True
         else:
-            st.error("Failed to send email. No error was raised, but no message was returned.")
+            log_debug_info("Failed to send email. No error was raised, but no message was returned.")
             return False
     except HttpError as error:
         if error.resp.status == 403 and "accessNotConfigured" in str(error):
-            st.error("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
-            st.error("For instructions, refer to the error message above.")
+            log_debug_info("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
         else:
-            st.error(f"An error occurred while sending the email: {error}")
+            log_debug_info(f"An error occurred while sending the email: {error}")
         return False
     except Exception as e:
-        st.error(f"An unexpected error occurred while sending the email: {str(e)}")
+        log_debug_info(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
 # Sidebar
-if st.sidebar.button("Force Refresh"):
-    st.cache_data.clear()
-    st.session_state.pop('drive_file_id', None)
-    st.session_state.pop('df', None)
-    st.experimental_rerun()
 st.sidebar.title("Application Controls")
 st.sidebar.markdown("""
 ### Instructions
@@ -233,27 +238,36 @@ st.sidebar.markdown("""
 5. Use the checkbox below the form to view all submitted requests.
 """)
 
+# Force Refresh button
+if st.sidebar.button("Force Refresh"):
+    st.cache_data.clear()
+    st.session_state.pop('drive_file_id', None)
+    st.session_state.pop('df', None)
+    st.experimental_rerun()
+
 # Find or create CSV file
-if 'drive_file_id' not in st.session_state or not verify_file_exists(st.session_state.drive_file_id):
+if 'drive_file_id' not in st.session_state or not verify_file_accessibility(st.session_state.drive_file_id):
     st.session_state.drive_file_id = find_or_create_csv()
 
 if st.session_state.drive_file_id:
     if verify_file_accessibility(st.session_state.drive_file_id):
         if st.sidebar.button("Update Records") or 'df' not in st.session_state:
             df = read_csv_from_drive(st.session_state.drive_file_id)
-        if df is not None:
-            st.session_state.df = df
-            st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
-        else:
-                st.error("The CSV file exists but is not accessible. Attempting to create a new one.")
+            if df is not None:
+                st.session_state.df = df
+                st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
+            else:
+                st.sidebar.error("Failed to update records. Please try again.")
                 st.session_state.drive_file_id = find_or_create_csv()
+    else:
+        st.error("The CSV file exists but is not accessible. Attempting to create a new one.")
+        st.session_state.drive_file_id = find_or_create_csv()
 else:
     st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
 
 # Main content
 st.title("R&D Purchase Request (PO) Application")
-
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -356,6 +370,14 @@ if show_summary:
     st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
     st.subheader("Purchase Request Summary")
     st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Debug Information
+if st.checkbox("Show Debug Information"):
+    st.markdown("<div class='debug-info'>", unsafe_allow_html=True)
+    st.subheader("Debug Information")
+    for log in st.session_state.debug_info:
+        st.text(log)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
