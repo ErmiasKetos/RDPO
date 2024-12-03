@@ -84,10 +84,6 @@ except Exception as e:
     st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
     st.stop()
 
-def log_debug_info(message):
-    if 'debug_info' not in st.session_state:
-        st.session_state.debug_info = []
-    st.session_state.debug_info.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
 def verify_file_exists_and_accessible(file_id):
     try:
