@@ -13,7 +13,7 @@ from googleapiclient.http import MediaIoBaseUpload
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
-RECIPIENT_EMAIL = 'ermias@ketos.co, girma.seifu@ketos.co '
+RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
 st.set_page_config(page_title="R&D Purchase Request Application", layout="wide")
@@ -92,31 +92,20 @@ def create_csv_in_drive():
 # Function to read CSV from Google Drive
 def read_csv_from_drive(file_id):
     if file_id is None:
-        st.warning("No existing file ID. Creating a new CSV file...")
-        new_file_id = create_csv_in_drive()
-        if new_file_id:
-            st.success(f"New CSV file created with ID: {new_file_id}")
-            return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
-        else:
-            st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
-            return None, None
+        st.error("No existing file ID. Please check your Google Drive permissions.")
+        return None, None
 
     try:
         file = drive_service.files().get_media(fileId=file_id).execute()
-        return pd.read_csv(io.StringIO(file.decode('utf-8'))), file_id
+        df = pd.read_csv(io.StringIO(file.decode('utf-8')))
+        st.success(f"CSV file successfully loaded with {len(df)} existing records.")
+        return df, file_id
     except HttpError as e:
         if e.resp.status == 404:
-            st.warning("CSV file not found in Google Drive. Creating a new one...")
-            new_file_id = create_csv_in_drive()
-            if new_file_id:
-                st.success(f"New CSV file created with ID: {new_file_id}")
-                return pd.DataFrame(columns=['PO Number', 'Requester', 'Requester Email', 'Request Date and Time', 'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department', 'Description', 'Classification', 'Urgency']), new_file_id
-            else:
-                st.error("Failed to create a new CSV file. Please check your Google Drive permissions.")
-                return None, None
+            st.error("CSV file not found in Google Drive. Please check the file ID and permissions.")
         else:
             st.error(f"Error reading CSV from Google Drive: {str(e)}")
-            return None, None
+        return None, None
     except Exception as e:
         st.error(f"Unexpected error reading CSV from Google Drive: {str(e)}")
         return None, None
@@ -145,18 +134,23 @@ def generate_po_number(df):
         sequence_number = 1
     else:
         last_po_number = df['PO Number'].iloc[-1]
+        last_year_month = last_po_number.split('-')[2]
         last_sequence_number = int(last_po_number.split('-')[-1])
-        sequence_number = last_sequence_number + 1
+        
+        if last_year_month == year_month:
+            sequence_number = last_sequence_number + 1
+        else:
+            sequence_number = 1
     
     return f"RD-PO-{year_month}-{sequence_number:04d}"
 
 # Function to send email
-def send_email(sender_email, email_body):
+def send_email(sender_email, subject, email_body):
     try:
         message = MIMEMultipart()
         message['to'] = RECIPIENT_EMAIL
         message['from'] = sender_email
-        message['subject'] = 'New Purchase Request'
+        message['subject'] = subject
         message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
@@ -287,7 +281,7 @@ if submitted:
         """
         
         # Send email
-        if send_email(requester_email, email_body):
+        if send_email(requester_email, f"Purchase request: {po_number}", email_body):
             st.success("Email sent successfully!")
         else:
             st.error("Failed to send email. Please contact the IT department.")
