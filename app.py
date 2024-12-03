@@ -298,14 +298,6 @@ if submitted:
     else:
         st.error("Please fill in all required fields.")
 
-# Summary table
-show_summary = st.checkbox("Show Purchase Request Summary")
-
-if show_summary:
-    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
-    st.subheader("Purchase Request Summary")
-    st.dataframe(df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
