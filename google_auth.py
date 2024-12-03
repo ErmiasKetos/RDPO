@@ -1,6 +1,5 @@
 import streamlit as st
 from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import json
@@ -15,7 +14,8 @@ def get_google_creds():
         flow.redirect_uri = client_config['web']['redirect_uris'][0]
         
         if 'google_token' in st.secrets:
-            creds = Credentials.from_authorized_user_info(json.loads(st.secrets['google_token']), SCOPES)
+            token_info = json.loads(st.secrets['google_token'])
+            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
         
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -24,7 +24,16 @@ def get_google_creds():
                 st.error("Google token is missing or invalid. Please reauthorize the application.")
                 auth_url, _ = flow.authorization_url(prompt='consent')
                 st.markdown(f"[Click here to authorize]({auth_url})")
-                st.stop()
+                
+                code = st.text_input("Enter the authorization code:")
+                if code:
+                    flow.fetch_token(code=code)
+                    creds = flow.credentials
+                    st.success("Authorization successful! Please add the following token to your Streamlit secrets:")
+                    st.code(json.dumps(json.loads(creds.to_json()), indent=2))
+                    st.stop()
+                else:
+                    st.stop()
     else:
         st.error("Google client secret is not set in Streamlit secrets.")
         st.stop()
