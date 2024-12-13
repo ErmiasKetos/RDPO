@@ -206,6 +206,15 @@ def generate_po_number(df):
 def send_email_notification(po_data):
     """Send email notification for new PO."""
     try:
+        # Create Gmail service
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=['https://www.googleapis.com/auth/gmail.send']
+        )
+        
+        from googleapiclient.discovery import build
+        gmail_service = build('gmail', 'v1', credentials=credentials)
+        
         email_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6;">
@@ -239,8 +248,11 @@ def send_email_notification(po_data):
         message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        gmail_service = service_account.credentials.authorized_user('gmail','v1')
-        gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
+        gmail_service.users().messages().send(
+            userId='me', 
+            body={'raw': raw_message}
+        ).execute()
+        
         return True
     except Exception as e:
         st.error(f"Error sending email: {str(e)}")
