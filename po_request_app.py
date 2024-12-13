@@ -299,7 +299,7 @@ def send_email_notification(po_data):
 
 def main():
     # Initialize Inventory Manager
-    if 'inventory_manager' not in st.session_state:
+     if 'inventory_manager' not in st.session_state:
         try:
             st.session_state.inventory_manager = InventoryManager()
         except Exception as e:
