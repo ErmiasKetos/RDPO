@@ -266,12 +266,12 @@ def send_email_notification(po_data):
         st.error(f"Error Details: {http_err.resp.reason}")
         return False
     
-except Exception as e:
-    st.error(f"Comprehensive Error sending email: {str(e)}")
-    # Log the full traceback for more detailed debugging
-    import traceback
-    st.error(traceback.format_exc())
-    return False
+    except Exception as e:
+        st.error(f"Comprehensive Error sending email: {str(e)}")
+        # Log the full traceback for more detailed debugging
+        import traceback
+        st.error(traceback.format_exc())
+        return False
 
 # Part 3: Main Application UI and Form Handling
 
