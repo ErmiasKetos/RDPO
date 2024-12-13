@@ -10,6 +10,8 @@ import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import time
+from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
 
 # Configure Streamlit page
 st.set_page_config(
@@ -260,12 +262,12 @@ def send_email_notification(po_data):
         st.info(f"Email sent successfully. Response: {response}")
         return True
     
-    except googleapiclient.errors.HttpError as http_err:
+    
+    except HttpError as http_err:
         st.error(f"HTTP Error occurred: {http_err}")
         # Log more details about the error
         st.error(f"Error Details: {http_err.resp.reason}")
         return False
-    
     except Exception as e:
         st.error(f"Comprehensive Error sending email: {str(e)}")
         # Log the full traceback for more detailed debugging
