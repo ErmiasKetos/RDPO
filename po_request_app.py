@@ -1,5 +1,3 @@
-# po_request.py
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -9,7 +7,6 @@ import io
 import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import time
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 
@@ -25,116 +22,6 @@ SHEET_ID = "1MTMTgGB6J6b_b_2wqHsaxxi5O_La1L34qMus5NC3K-E"
 WORKSHEET_NAME = "Sheet1"
 RECIPIENT_EMAIL = 'ermias@ketos.co, girma.seifu@ketos.co'
 
-# Modern styling
-st.markdown("""
-<style>
-    /* Main container styling */
-    .main {
-        background-color: #f8f9fa;
-        padding: 2rem;
-    }
-    
-    /* Card styling */
-    .card {
-        background-color: white;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1.5rem;
-    }
-    
-    /* Form styling */
-    .stForm {
-        background: white;
-        padding: 2rem;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-    }
-    
-    /* Input field styling */
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-size: 1rem;
-    }
-    
-    /* Button styling */
-    .stButton > button {
-        width: 100%;
-        background: linear-gradient(90deg, #0071ba, #00a6fb);
-        color: white;
-        border: none;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,113,186,0.2);
-    }
-    
-    /* Header styling */
-    h1 {
-        color: #0071ba;
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 2rem;
-    }
-    
-    h2, h3 {
-        color: #2c3e50;
-        margin-bottom: 1rem;
-    }
-    
-    /* Success/Error message styling */
-    .success-message {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-    }
-    
-    .error-message {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background-color: #f8f9fa;
-    }
-    
-    /* Status indicators */
-    .status-indicator {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
-    
-    .status-success {
-        background-color: #28a745;
-    }
-    
-    .status-error {
-        background-color: #dc3545;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Part 2: Google Sheets Integration and Core Functions
-
 class InventoryManager:
     def __init__(self):
         """Initialize Google Sheets connection."""
@@ -144,12 +31,12 @@ class InventoryManager:
                 scopes=[
                     "https://www.googleapis.com/auth/spreadsheets",
                     "https://www.googleapis.com/auth/drive.file",
-                    "https://mail.google.com/",
                     "https://www.googleapis.com/auth/gmail.send"
                 ]
             )
             self.client = gspread.authorize(credentials)
             self.sheet = self.client.open_by_key(SHEET_ID).worksheet(WORKSHEET_NAME)
+            self.credentials = credentials
         except Exception as e:
             st.error(f"Failed to initialize Google Sheets connection: {str(e)}")
             raise
@@ -206,41 +93,18 @@ def generate_po_number(df):
     
     return f"RD-PO-{year_month}-{sequence_number:04d}"
 
-
-def send_email_notification(po_data):
-    """Send email notification with enhanced error handling."""
+def send_email_notification(po_data, credentials):
+    """Send email notification with comprehensive error handling."""
     try:
-        # Explicitly specify all required scopes
-        scopes = [
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/gmail.compose',
-            'https://www.googleapis.com/auth/gmail.modify'
-        ]
-        
-        # Create credentials with all scopes
-        credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scopes
-        )
-        
-        # Use the service account email as the sender
-        sender_email = credentials.service_account_email
-        
-        from googleapiclient.discovery import build
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-        
         # Create Gmail service
         gmail_service = build('gmail', 'v1', credentials=credentials)
         
-        # Construct email message
+        # Prepare email message
         message = MIMEMultipart()
         message['to'] = RECIPIENT_EMAIL
-        message['from'] = sender_email  # Use service account email
+        message['from'] = credentials.service_account_email
         message['subject'] = f"Purchase request: {po_data['PO Number']}"
 
-        
-        
         email_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6;">
@@ -266,14 +130,16 @@ def send_email_notification(po_data):
         </body>
         </html>
         """
+
         message.attach(MIMEText(email_body, 'html'))
         
+        # Encode message
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-      
+        
+        # Send message
         try:
-            # Specify service account email explicitly
             result = gmail_service.users().messages().send(
-                userId=sender_email,  # Use service account email instead of 'me'
+                userId=credentials.service_account_email, 
                 body={'raw': raw_message}
             ).execute()
             
@@ -288,29 +154,16 @@ def send_email_notification(po_data):
             st.error(f"Error Details: {http_err}")
             return False
     
-        except Exception as e:
-            # Catch-all error handling
-            st.error(f"Comprehensive Email Sending Error: {str(e)}")
-            import traceback
-            st.error(traceback.format_exc())
-            return False
-
-# Part 3: Main Application UI and Form Handling
+    except Exception as e:
+        st.error(f"Comprehensive Email Sending Error: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
+        return False
 
 def main():
-    # Initialize Inventory Manager
-     if 'inventory_manager' not in st.session_state:
-        try:
-            st.session_state.inventory_manager = InventoryManager()
-        except Exception as e:
-            st.error("Failed to initialize application. Please check your connection and try again.")
-            st.error(f"Error: {str(e)}")
-            return
-
-    # Application Header
     st.markdown('<h1>R&D Purchase Request (PO) Application</h1>', unsafe_allow_html=True)
 
-    # Sidebar
+    # Sidebar with instructions
     with st.sidebar:
         st.markdown("### Instructions")
         st.info("""
@@ -323,7 +176,7 @@ def main():
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.rerun()
 
-    # Main Form
+    # Main form
     st.markdown('<div class="card">', unsafe_allow_html=True)
     with st.form("po_request_form", clear_on_submit=True):
         st.markdown("### Purchase Request Form")
@@ -363,8 +216,11 @@ def main():
         if all([requester, requester_email, link, attention_to, description]):
             with st.spinner("Processing your request..."):
                 try:
+                    # Initialize inventory manager
+                    inventory_manager = InventoryManager()
+                    
                     # Get existing records
-                    df = st.session_state.inventory_manager.get_all_records()
+                    df = inventory_manager.get_all_records()
                     
                     # Generate PO number
                     po_number = generate_po_number(df)
@@ -386,9 +242,9 @@ def main():
                     }
                     
                     # Save to Google Sheets
-                    if st.session_state.inventory_manager.add_new_po(po_data):
+                    if inventory_manager.add_new_po(po_data):
                         # Send email notification
-                        if send_email_notification(po_data):
+                        if send_email_notification(po_data, inventory_manager.credentials):
                             st.success("✅ Request submitted successfully!")
                             st.info(f"Your PO Number is: {po_number}")
                             
