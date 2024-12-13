@@ -206,17 +206,38 @@ def generate_po_number(df):
     
     return f"RD-PO-{year_month}-{sequence_number:04d}"
 
+
 def send_email_notification(po_data):
-    """Send email notification for new PO."""
+    """Send email notification with enhanced error handling."""
     try:
-        # Create Gmail service
+        # Explicitly specify all required scopes
+        scopes = [
+            'https://www.googleapis.com/auth/gmail.send',
+            'https://www.googleapis.com/auth/gmail.compose',
+            'https://www.googleapis.com/auth/gmail.modify'
+        ]
+        
+        # Create credentials with all scopes
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
-            scopes=['https://www.googleapis.com/auth/gmail.send', 'https://mail.google.com/' ]
+            scopes=scopes
         )
         
+        # Use the service account email as the sender
+        sender_email = credentials.service_account_email
+        
         from googleapiclient.discovery import build
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        # Create Gmail service
         gmail_service = build('gmail', 'v1', credentials=credentials)
+        
+        # Construct email message
+        message = MIMEMultipart()
+        message['to'] = RECIPIENT_EMAIL
+        message['from'] = sender_email  # Use service account email
+        message['subject'] = f"Purchase request: {po_data['PO Number']}"
 
         
         
@@ -245,35 +266,34 @@ def send_email_notification(po_data):
         </body>
         </html>
         """
-
-        message = MIMEMultipart()
-        message['to'] = RECIPIENT_EMAIL
-        message['from'] = po_data['Requester Email']
-        message['subject'] = f"Purchase request: {po_data['PO Number']}"
         message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        gmail_service.users().messages().send(
-            userId='me', 
-            body={'raw': raw_message}
-        ).execute()
-
-        # Log the response for debugging
-        st.info(f"Email sent successfully. Response: {response}")
-        return True
+      
+        try:
+            # Specify service account email explicitly
+            result = gmail_service.users().messages().send(
+                userId=sender_email,  # Use service account email instead of 'me'
+                body={'raw': raw_message}
+            ).execute()
+            
+            st.success(f"Email sent successfully. Message ID: {result.get('id')}")
+            return True
+        
+        except HttpError as http_err:
+            # More detailed error logging
+            st.error(f"Gmail API Error: {http_err}")
+            st.error(f"Error Response: {http_err.resp.status}")
+            st.error(f"Error Reason: {http_err.resp.reason}")
+            st.error(f"Error Details: {http_err}")
+            return False
     
-    
-    except HttpError as http_err:
-        st.error(f"HTTP Error occurred: {http_err}")
-        # Log more details about the error
-        st.error(f"Error Details: {http_err.resp.reason}")
-        return False
-    except Exception as e:
-        st.error(f"Comprehensive Error sending email: {str(e)}")
-        # Log the full traceback for more detailed debugging
-        import traceback
-        st.error(traceback.format_exc())
-        return False
+        except Exception as e:
+            # Catch-all error handling
+            st.error(f"Comprehensive Email Sending Error: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
+            return False
 
 # Part 3: Main Application UI and Form Handling
 
