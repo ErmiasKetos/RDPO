@@ -257,21 +257,21 @@ def send_email_notification(po_data):
         ).execute()
 
         # Log the response for debugging
-            st.info(f"Email sent successfully. Response: {response}")
-            return True
-        
-        except googleapiclient.errors.HttpError as http_err:
-            st.error(f"HTTP Error occurred: {http_err}")
-            # Log more details about the error
-            st.error(f"Error Details: {http_err.resp.reason}")
-            return False
-        
-    except Exception as e:
-        st.error(f"Comprehensive Error sending email: {str(e)}")
-        # Log the full traceback for more detailed debugging
-        import traceback
-        st.error(traceback.format_exc())
+        st.info(f"Email sent successfully. Response: {response}")
+        return True
+    
+    except googleapiclient.errors.HttpError as http_err:
+        st.error(f"HTTP Error occurred: {http_err}")
+        # Log more details about the error
+        st.error(f"Error Details: {http_err.resp.reason}")
         return False
+    
+except Exception as e:
+    st.error(f"Comprehensive Error sending email: {str(e)}")
+    # Log the full traceback for more detailed debugging
+    import traceback
+    st.error(traceback.format_exc())
+    return False
 
 # Part 3: Main Application UI and Form Handling
 
