@@ -142,6 +142,7 @@ class InventoryManager:
                 scopes=[
                     "https://www.googleapis.com/auth/spreadsheets",
                     "https://www.googleapis.com/auth/drive.file",
+                    "https://mail.google.com/",
                     "https://www.googleapis.com/auth/gmail.send"
                 ]
             )
@@ -209,11 +210,13 @@ def send_email_notification(po_data):
         # Create Gmail service
         credentials = service_account.Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
-            scopes=['https://www.googleapis.com/auth/gmail.send']
+            scopes=['https://www.googleapis.com/auth/gmail.send', 'https://mail.google.com/' ]
         )
         
         from googleapiclient.discovery import build
         gmail_service = build('gmail', 'v1', credentials=credentials)
+
+        
         
         email_body = f"""
         <html>
@@ -252,10 +255,22 @@ def send_email_notification(po_data):
             userId='me', 
             body={'raw': raw_message}
         ).execute()
+
+        # Log the response for debugging
+            st.info(f"Email sent successfully. Response: {response}")
+            return True
         
-        return True
+        except googleapiclient.errors.HttpError as http_err:
+            st.error(f"HTTP Error occurred: {http_err}")
+            # Log more details about the error
+            st.error(f"Error Details: {http_err.resp.reason}")
+            return False
+        
     except Exception as e:
-        st.error(f"Error sending email: {str(e)}")
+        st.error(f"Comprehensive Error sending email: {str(e)}")
+        # Log the full traceback for more detailed debugging
+        import traceback
+        st.error(traceback.format_exc())
         return False
 
 # Part 3: Main Application UI and Form Handling
