@@ -59,12 +59,12 @@ st.markdown("""
 
 # Initialize Google services
 try:
-    #drive_service = get_drive_service()
-    #gmail_service = get_gmail_service()
-    #sheet_service = build('sheets', 'v4', credentials=get_google_creds())
-    #if not sheet_service:
-        #st.error("Failed to initialize Google Sheets service.")
-        #st.stop()
+    drive_service = get_drive_service()
+    gmail_service = get_gmail_service()
+    sheet_service = build('sheets', 'v4', credentials=get_google_creds())
+    if not sheet_service:
+        st.error("Failed to initialize Google Sheets service.")
+        st.stop()
 except GoogleAuthError as e:
     st.error(f"Google authentication error: {str(e)}")
     st.error("Please follow the authorization process to resolve this issue.")
@@ -73,7 +73,7 @@ except Exception as e:
     st.error(f"Error initializing Google services: {str(e)}")
     st.error("Please make sure you have set up the Google APIs correctly.")
     st.stop()
-
+    
 def log_debug_info(message):
     """Log debug information to session state"""
     if 'debug_info' not in st.session_state:
