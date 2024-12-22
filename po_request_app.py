@@ -15,7 +15,7 @@ st.cache_data.clear()
 
 # Constants
 DRIVE_FILE_NAME = 'purchase_summary.csv'
-DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
+DRIVE_FOLDER_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'  # Updated folder ID
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
