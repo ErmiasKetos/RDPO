@@ -18,6 +18,30 @@ DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '1VIbo7oRi7WcAMhzS55Ka1j9w7HqNY2EJ'  # Updated folder ID
 RECIPIENT_EMAIL = 'ermias@ketos.co'
 
+def verify_file_exists_and_accessible(file_id):
+    """Verify if file exists and is accessible in Google Drive"""
+    try:
+        file = drive_service.files().get(
+            fileId=file_id, 
+            fields='id, name, modifiedTime, size, trashed'
+        ).execute()
+        
+        if file.get('trashed', False):
+            log_debug_info(f"File {file_id} exists but is in the trash.")
+            return False
+            
+        log_debug_info(f"File verified: {file['name']} (ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes)")
+        return True
+    except HttpError as error:
+        if error.resp.status == 404:
+            log_debug_info(f"File {file_id} not found.")
+        else:
+            log_debug_info(f"Error verifying file {file_id}: {str(error)}")
+        return False
+    except Exception as e:
+        log_debug_info(f"Error verifying file: {str(e)}")
+        return False
+
 # Page configuration
 st.set_page_config(page_title="R&D Purchase Request Application", layout="wide")
 
