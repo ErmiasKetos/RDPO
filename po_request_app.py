@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
-import base64
+#import base64
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from google_auth import get_drive_service, get_gmail_service, get_google_creds
+#from google_auth import get_drive_service, get_gmail_service, get_google_creds
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+import smtplib
+import ssl
 
 # Clear Streamlit cache
 st.cache_data.clear()
@@ -57,12 +59,12 @@ st.markdown("""
 
 # Initialize Google services
 try:
-    drive_service = get_drive_service()
-    gmail_service = get_gmail_service()
-    sheet_service = build('sheets', 'v4', credentials=get_google_creds())
-    if not sheet_service:
-        st.error("Failed to initialize Google Sheets service.")
-        st.stop()
+    #drive_service = get_drive_service()
+    #gmail_service = get_gmail_service()
+    #sheet_service = build('sheets', 'v4', credentials=get_google_creds())
+    #if not sheet_service:
+        #st.error("Failed to initialize Google Sheets service.")
+        #st.stop()
 except GoogleAuthError as e:
     st.error(f"Google authentication error: {str(e)}")
     st.error("Please follow the authorization process to resolve this issue.")
@@ -218,41 +220,41 @@ def update_csv_in_drive(df, file_id):
         log_debug_info(f"Error updating CSV in Google Drive: {str(e)}")
         return False
 
-def send_email(sender_email, subject, email_body):
-    """Send email using Gmail API"""
+# Updated send_email function
+def send_email(sender_email, receiver_email, subject, email_body):
+    """Send email using sender's email account (no authorization required)"""
     try:
         message = MIMEMultipart()
-        message['to'] = RECIPIENT_EMAIL
+        message['to'] = receiver_email
         message['from'] = sender_email
         message['subject'] = subject
         message.attach(MIMEText(email_body, 'html'))
+
+        # Create a secure SSL context
+        context = ssl.create_default_context()
         
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        sent_message = gmail_service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message}
-        ).execute()
-        
-        if sent_message:
-            log_debug_info(f"Email sent successfully. Message ID: {sent_message['id']}")
-            return True
-        return False
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
+            #server.login(sender_email, sender_password)  # No login required
+            server.sendmail(sender_email, receiver_email, message.as_string())
+
+        log_debug_info(f"Email sent successfully from {sender_email} to {receiver_email}")
+        return True
     except Exception as e:
         log_debug_info(f"Error sending email: {str(e)}")
         return False
 
 # Initialize or get file ID for CSV backup
-if 'drive_file_id' not in st.session_state:
-    st.session_state.drive_file_id = find_or_create_csv()
+#if 'drive_file_id' not in st.session_state:
+    #st.session_state.drive_file_id = find_or_create_csv()
 
 # Initialize DataFrame from Google Sheets
-if 'df' not in st.session_state:
-    df = read_from_sheet()
-    if df is not None:
-        st.session_state.df = df
-    else:
-        st.error("Failed to read data from Google Sheets.")
-        st.stop()
+#if 'df' not in st.session_state:
+    #df = read_from_sheet()
+    #if df is not None:
+        #st.session_state.df = df
+    #else:
+        #st.error("Failed to read data from Google Sheets.")
+        #st.stop()
 
 # Sidebar
 st.sidebar.title("Instructions")
@@ -284,14 +286,12 @@ with st.form("po_request_form", clear_on_submit=True):
         requester_email = st.text_input("Requester Email")
         link = st.text_input("Link to Item(s)")
         quantity = st.number_input("Quantity of Item(s)", min_value=1, value=1)
-        shipment_address = st.text_input("Shipment Address", 
-                                       value="420 S Hillview Dr, Milpitas, CA 95035")
+        shipment_address = st.text_input("Shipment Address", value="420 S Hillview Dr, Milpitas, CA 95035")
 
     with col2:
         attention_to = st.text_input("Attention To")
         department = st.text_input("Department", value="R&D", disabled=True)
-        description = st.text_area("Brief Description of Use",
-                                 help="Include your project name/number")
+        description = st.text_area("Brief Description of Use", help="Include your project name/number")
         classification = st.selectbox(
             "Classification Code",
             [
@@ -311,12 +311,12 @@ st.markdown("</div>", unsafe_allow_html=True)
 if submitted:
     if all([requester, requester_email, link, attention_to, description]):
         # First read latest data from sheet
-        latest_df = read_from_sheet()
-        if latest_df is not None:
-            st.session_state.df = latest_df
-            po_number = generate_po_number(latest_df)
-        else:
-            po_number = generate_po_number(st.session_state.df)
+        #latest_df = read_from_sheet()
+        #if latest_df is not None:
+            #st.session_state.df = latest_df
+            #po_number = generate_po_number(latest_df)
+        #else:
+        po_number = generate_po_number(st.session_state.df)
         
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -337,15 +337,15 @@ if submitted:
         }
         
         # Save to Google Sheet
-        if append_to_sheet(new_data):
-            st.success("Request submitted to Google Sheet!")
+        #if append_to_sheet(new_data):
+            #st.success("Request submitted to Google Sheet!")
             
             # Update local DataFrame and CSV backup
-            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
-            update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id)
+            #st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+            #update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id)
             
             # Prepare and send email
-            email_body = f"""
+        email_body = f"""
             <html>
             <body style="font-family: Arial, sans-serif; line-height: 1.6;">
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -365,44 +365,28 @@ if submitted:
                         <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Classification</th><td style="padding: 8px; border: 1px solid #dee2e6;">{classification}</td></tr>
                         <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Urgency</th><td style="padding: 8px; border: 1px solid #dee2e6;">{urgency}</td></tr>
                     </table>
-                    <p>Regards,<br>{requester}</p>
+                    <p>Thank you for your prompt attention to this request.</p>
+                    <p>Sincerely,</p>
+                    <p>R&D Team</p>
                 </div>
             </body>
             </html>
-            """
-            
-            if send_email(requester_email, f"Purchase request: {po_number}", email_body):
-                st.success("✅ Email sent successfully!")
-                
-                # Show confirmation details
-                with st.expander("View Request Details", expanded=True):
-                    st.markdown(f"""
-                        ### Request Summary
-                        - **PO Number**: {po_number}
-                        - **Requester**: {requester}
-                        - **Email**: {requester_email}
-                        - **Link**: {link}
-                        - **Quantity**: {quantity}
-                        - **Urgency**: {urgency}
-                    """)
-            else:
-                st.warning("Request saved but email notification failed. Please contact support.")
-        else:
-            st.error("Failed to submit request. Please try again.")
+        """
+
+        #if send_email(requester_email, RECIPIENT_EMAIL, 'PO Request', email_body):  # Use requester's email
+            #st.success("Request submitted successfully!")
+        #else:
+            #st.error("Failed to send email notification.")
     else:
-        st.error("Please fill in all required fields.")
+        st.warning("Please fill in all required fields.")
 
-# Footer
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        © 2024 KETOS R&D Purchase Request Application
-    </div>
-""", unsafe_allow_html=True)
-
-# Debug info
+# Display debug info if enabled
 if st.sidebar.checkbox("Show Debug Info"):
-    st.sidebar.markdown("### Debug Information")
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.subheader("Debug Information")
     if 'debug_info' in st.session_state:
-        for msg in st.session_state.debug_info:
-            st.sidebar.text(msg)
+        for message in st.session_state.debug_info:
+            st.write(message)
+    else:
+        st.write("No debug information available.")
+    st.markdown("</div>", unsafe_allow_html=True)
