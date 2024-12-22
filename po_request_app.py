@@ -6,9 +6,10 @@ import base64
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from google_auth import get_drive_service, get_gmail_service
+from google_auth import get_drive_service, get_gmail_service, get_google_creds
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # Clear Streamlit cache
@@ -28,17 +29,47 @@ st.set_page_config(
     layout="wide"
 )
 
+# Custom CSS
+st.markdown("""
+<style>
+    .main {
+        background-color: #f0f5ff;
+        padding: 2rem;
+        border-radius: 10px;
+    }
+    .stButton > button {
+        width: 100%;
+        background-color: #4CAF50;
+        color: white;
+    }
+    .stSelectbox, .stTextInput, .stTextArea {
+        background-color: white;
+    }
+    .card {
+        background-color: white;
+        border-radius: 5px;
+        padding: 1rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize Google services
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
+    sheet_service = build('sheets', 'v4', credentials=get_google_creds())
+    if not sheet_service:
+        st.error("Failed to initialize Google Sheets service.")
+        st.stop()
 except GoogleAuthError as e:
     st.error(f"Google authentication error: {str(e)}")
     st.error("Please follow the authorization process to resolve this issue.")
     st.stop()
 except Exception as e:
     st.error(f"Error initializing Google services: {str(e)}")
-    st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
+    st.error("Please make sure you have set up the Google APIs correctly.")
     st.stop()
 
 def log_debug_info(message):
@@ -46,6 +77,51 @@ def log_debug_info(message):
     if 'debug_info' not in st.session_state:
         st.session_state.debug_info = []
     st.session_state.debug_info.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
+
+def append_to_sheet(values):
+    """Append new row to Google Sheet"""
+    try:
+        range_name = f"{WORKSHEET_NAME}!A:L"
+        body = {
+            'values': [list(values.values())]
+        }
+        result = sheet_service.spreadsheets().values().append(
+            spreadsheetId=SHEET_ID,
+            range=range_name,
+            valueInputOption='RAW',
+            insertDataOption='INSERT_ROWS',
+            body=body
+        ).execute()
+        
+        log_debug_info(f"Data appended to sheet: {result.get('updates').get('updatedRange')}")
+        return True
+    except Exception as e:
+        log_debug_info(f"Error appending to sheet: {str(e)}")
+        return False
+
+def read_from_sheet():
+    """Read all data from Google Sheet"""
+    try:
+        range_name = f"{WORKSHEET_NAME}!A:L"
+        result = sheet_service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=range_name
+        ).execute()
+        values = result.get('values', [])
+        
+        if not values:
+            return pd.DataFrame(columns=[
+                'PO Number', 'Requester', 'Requester Email', 'Request Date and Time',
+                'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department',
+                'Description', 'Classification', 'Urgency'
+            ])
+            
+        df = pd.DataFrame(values[1:], columns=values[0])
+        log_debug_info(f"Read {len(df)} rows from sheet")
+        return df
+    except Exception as e:
+        log_debug_info(f"Error reading from sheet: {str(e)}")
+        return None
 
 def verify_file_exists_and_accessible(file_id):
     """Verify if file exists and is accessible in Google Drive"""
@@ -61,53 +137,6 @@ def verify_file_exists_and_accessible(file_id):
             log_debug_info(f"File {file_id} not found.")
         else:
             log_debug_info(f"Error verifying file {file_id}: {str(error)}")
-        return False
-
-def verify_file_content(file_id):
-    """Verify if file has valid content"""
-    try:
-        request = drive_service.files().get_media(fileId=file_id)
-        file_content = request.execute()
-        if file_content:
-            df = pd.read_csv(io.BytesIO(file_content))
-            log_debug_info(f"File content verified. Number of records: {len(df)}")
-            return True
-        else:
-            log_debug_info("File exists but is empty.")
-            return False
-    except Exception as e:
-        log_debug_info(f"Error verifying file content: {str(e)}")
-        return False
-
-def send_email(sender_email, subject, email_body):
-    """Send email using Gmail API"""
-    try:
-        message = MIMEMultipart()
-        message['to'] = RECIPIENT_EMAIL
-        message['from'] = sender_email
-        message['subject'] = subject
-        message.attach(MIMEText(email_body, 'html'))
-        
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        sent_message = gmail_service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message}
-        ).execute()
-        
-        if sent_message:
-            log_debug_info(f"Email sent successfully. Message ID: {sent_message['id']}")
-            return True
-        else:
-            log_debug_info("Failed to send email. No error was raised, but no message was returned.")
-            return False
-    except HttpError as error:
-        if error.resp.status == 403 and "accessNotConfigured" in str(error):
-            log_debug_info("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
-        else:
-            log_debug_info(f"An error occurred while sending the email: {error}")
-        return False
-    except Exception as e:
-        log_debug_info(f"An unexpected error occurred while sending the email: {str(e)}")
         return False
 
 def generate_po_number(df):
@@ -146,15 +175,9 @@ def find_or_create_csv():
         if files:
             file = files[0]
             file_id = file['id']
-            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
-            
-            if verify_file_exists_and_accessible(file_id) and verify_file_content(file_id):
-                return file_id
-            else:
-                log_debug_info("File found but not accessible or empty. Creating a new one.")
-                return create_new_csv()
+            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}")
+            return file_id
         else:
-            log_debug_info("No existing CSV file found. Creating a new one.")
             return create_new_csv()
     except Exception as e:
         log_debug_info(f"Error in find_or_create_csv: {str(e)}")
@@ -175,95 +198,69 @@ def create_new_csv():
             media_body=media,
             fields='id'
         ).execute()
-        new_file_id = file.get('id')
-        log_debug_info(f"New CSV file created with ID: {new_file_id}")
-        return new_file_id
+        return file.get('id')
     except Exception as e:
         log_debug_info(f"Error creating new CSV file: {str(e)}")
         return None
 
-def read_csv_from_drive(file_id):
-    """Read CSV file from Google Drive"""
-    max_retries = 3
-    retry_delay = 1  # seconds
-
-    for attempt in range(max_retries):
-        try:
-            log_debug_info(f"Attempting to read CSV file with ID: {file_id} (Attempt {attempt + 1})")
-            request = drive_service.files().get_media(fileId=file_id)
-            file_content = request.execute()
-            df = pd.read_csv(io.BytesIO(file_content))
-            log_debug_info(f"CSV file successfully loaded with {len(df)} records")
-            return df
-        except HttpError as e:
-            if e.resp.status in [404, 410]:
-                log_debug_info(f"File not found or inaccessible. Error: {str(e)}")
-                return None
-            elif attempt < max_retries - 1:
-                log_debug_info(f"Transient error, retrying in {retry_delay} seconds. Error: {str(e)}")
-                time.sleep(retry_delay)
-            else:
-                log_debug_info(f"Max retries reached. Error reading CSV from Google Drive: {str(e)}")
-                return None
-        except Exception as e:
-            log_debug_info(f"Unexpected error reading CSV from Google Drive: {str(e)}")
-            return None
-
 def update_csv_in_drive(df, file_id):
     """Update CSV file in Google Drive"""
     try:
-        log_debug_info(f"Attempting to update CSV file with ID: {file_id}")
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         media = MediaIoBaseUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
-        updated_file = drive_service.files().update(
+        drive_service.files().update(
             fileId=file_id,
             media_body=media
         ).execute()
-        
-        if updated_file:
-            log_debug_info(f"CSV file successfully updated. File ID: {updated_file['id']}")
-            return True
-        else:
-            log_debug_info("Failed to update CSV file in Google Drive.")
-            return False
+        return True
     except Exception as e:
         log_debug_info(f"Error updating CSV in Google Drive: {str(e)}")
         return False
 
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .main {
-        background-color: #f0f5ff;
-        padding: 2rem;
-        border-radius: 10px;
-    }
-    .stButton > button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white;
-    }
-    .stSelectbox, .stTextInput, .stTextArea {
-        background-color: white;
-    }
-    .card {
-        background-color: white;
-        border-radius: 5px;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+def send_email(sender_email, subject, email_body):
+    """Send email using Gmail API"""
+    try:
+        message = MIMEMultipart()
+        message['to'] = RECIPIENT_EMAIL
+        message['from'] = sender_email
+        message['subject'] = subject
+        message.attach(MIMEText(email_body, 'html'))
+        
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+        sent_message = gmail_service.users().messages().send(
+            userId='me',
+            body={'raw': raw_message}
+        ).execute()
+        
+        if sent_message:
+            log_debug_info(f"Email sent successfully. Message ID: {sent_message['id']}")
+            return True
+        return False
+    except Exception as e:
+        log_debug_info(f"Error sending email: {str(e)}")
+        return False
+
+# Initialize or get file ID for CSV backup
+if 'drive_file_id' not in st.session_state:
+    st.session_state.drive_file_id = find_or_create_csv()
+
+# Initialize DataFrame from Google Sheets
+if 'df' not in st.session_state:
+    df = read_from_sheet()
+    if df is not None:
+        st.session_state.df = df
+    else:
+        st.error("Failed to read data from Google Sheets.")
+        st.stop()
 
 # Sidebar
 st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-1. Click the 'Update Records' button to manually refresh the data.
-2. Fill in the Purchase Request Form in the main area.
-3. Submit the form to create a new PO request.
-4. Make sure to mention your project in the Description.
+1. Fill in all required fields in the form.
+2. Review your information before submitting.
+3. Make sure to include your project in the Description.
+4. You will receive an email confirmation.
 """)
 
 # Force Refresh button
@@ -272,34 +269,14 @@ if st.sidebar.button("Force Refresh"):
     st.session_state.clear()
     st.rerun()
 
-# Initialize or get file ID
-if 'drive_file_id' not in st.session_state or not verify_file_exists_and_accessible(st.session_state.get('drive_file_id')):
-    st.session_state.drive_file_id = find_or_create_csv()
-
-if st.session_state.get('drive_file_id'):
-    if verify_file_exists_and_accessible(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
-            df = read_csv_from_drive(st.session_state.drive_file_id)
-            if df is not None:
-                st.session_state.df = df
-                st.sidebar.success(f"Successfully loaded {len(df)} records.")
-            else:
-                st.sidebar.error("Failed to update records. Please try again.")
-                st.session_state.drive_file_id = find_or_create_csv()
-    else:
-        st.error("CSV file not accessible. Creating new one...")
-        st.session_state.drive_file_id = find_or_create_csv()
-else:
-    st.error("Unable to find or create CSV file. Check permissions.")
-    st.stop()
-
 # Main content
 st.title("R&D Purchase Request (PO) Application")
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
-with st.form("po_request_form"):
-    st.subheader("Purchase Request Form")
+with st.form("po_request_form", clear_on_submit=True):
+    st.markdown("### Purchase Request Form")
+    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -313,7 +290,7 @@ with st.form("po_request_form"):
     with col2:
         attention_to = st.text_input("Attention To")
         department = st.text_input("Department", value="R&D", disabled=True)
-        description = st.text_area("Brief Description of Use", 
+        description = st.text_area("Brief Description of Use",
                                  help="Include your project name/number")
         classification = st.selectbox(
             "Classification Code",
@@ -331,10 +308,16 @@ with st.form("po_request_form"):
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Form submission handling
 if submitted:
     if all([requester, requester_email, link, attention_to, description]):
-        po_number = generate_po_number(st.session_state.df)
+        # First read latest data from sheet
+        latest_df = read_from_sheet()
+        if latest_df is not None:
+            st.session_state.df = latest_df
+            po_number = generate_po_number(latest_df)
+        else:
+            po_number = generate_po_number(st.session_state.df)
+        
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Prepare new data
@@ -353,56 +336,59 @@ if submitted:
             "Urgency": urgency
         }
         
-        # Update DataFrame and save to Drive
-        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
-        if update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id):
-            st.success("Request submitted and synced to Google Drive!")
-        else:
-            st.error("Failed to sync request to Google Drive. Please try again.")
-        
-        # Prepare and send email
-        email_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <p><b>RE: New Purchase Request</b></p>
-                <p>Dear Ordering,</p>
-                <p>R&D would like to order the following:</p>
-                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">PO Number</th><td style="padding: 8px; border: 1px solid #dee2e6;">{po_number}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Requester</th><td style="padding: 8px; border: 1px solid #dee2e6;">{requester}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Request Date and Time</th><td style="padding: 8px; border: 1px solid #dee2e6;">{request_datetime}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Link to Item(s)</th><td style="padding: 8px; border: 1px solid #dee2e6;">{link}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Quantity</th><td style="padding: 8px; border: 1px solid #dee2e6;">{quantity}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Shipment Address</th><td style="padding: 8px; border: 1px solid #dee2e6;">{shipment_address}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Attention To</th><td style="padding: 8px; border: 1px solid #dee2e6;">{attention_to}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Department</th><td style="padding: 8px; border: 1px solid #dee2e6;">{department}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Description</th><td style="padding: 8px; border: 1px solid #dee2e6;">{description}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Classification</th><td style="padding: 8px; border: 1px solid #dee2e6;">{classification}</td></tr>
-                    <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Urgency</th><td style="padding: 8px; border: 1px solid #dee2e6;">{urgency}</td></tr>
-                </table>
-                <p>Regards,<br>{requester}</p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        if send_email(requester_email, f"Purchase request: {po_number}", email_body):
-            st.success("✅ Email sent successfully!")
+        # Save to Google Sheet
+        if append_to_sheet(new_data):
+            st.success("Request submitted to Google Sheet!")
             
-            # Show confirmation details
-            with st.expander("View Request Details", expanded=True):
-                st.markdown(f"""
-                    ### Request Summary
-                    - **PO Number**: {po_number}
-                    - **Requester**: {requester}
-                    - **Email**: {requester_email}
-                    - **Link**: {link}
-                    - **Quantity**: {quantity}
-                    - **Urgency**: {urgency}
-                """)
+            # Update local DataFrame and CSV backup
+            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+            update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id)
+            
+            # Prepare and send email
+            email_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <p><b>RE: New Purchase Request</b></p>
+                    <p>Dear Ordering,</p>
+                    <p>R&D would like to order the following:</p>
+                    <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">PO Number</th><td style="padding: 8px; border: 1px solid #dee2e6;">{po_number}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Requester</th><td style="padding: 8px; border: 1px solid #dee2e6;">{requester}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Request Date and Time</th><td style="padding: 8px; border: 1px solid #dee2e6;">{request_datetime}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Link to Item(s)</th><td style="padding: 8px; border: 1px solid #dee2e6;">{link}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Quantity</th><td style="padding: 8px; border: 1px solid #dee2e6;">{quantity}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Shipment Address</th><td style="padding: 8px; border: 1px solid #dee2e6;">{shipment_address}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Attention To</th><td style="padding: 8px; border: 1px solid #dee2e6;">{attention_to}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Department</th><td style="padding: 8px; border: 1px solid #dee2e6;">{department}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Description</th><td style="padding: 8px; border: 1px solid #dee2e6;">{description}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Classification</th><td style="padding: 8px; border: 1px solid #dee2e6;">{classification}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Urgency</th><td style="padding: 8px; border: 1px solid #dee2e6;">{urgency}</td></tr>
+                    </table>
+                    <p>Regards,<br>{requester}</p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            if send_email(requester_email, f"Purchase request: {po_number}", email_body):
+                st.success("✅ Email sent successfully!")
+                
+                # Show confirmation details
+                with st.expander("View Request Details", expanded=True):
+                    st.markdown(f"""
+                        ### Request Summary
+                        - **PO Number**: {po_number}
+                        - **Requester**: {requester}
+                        - **Email**: {requester_email}
+                        - **Link**: {link}
+                        - **Quantity**: {quantity}
+                        - **Urgency**: {urgency}
+                    """)
+            else:
+                st.warning("Request saved but email notification failed. Please contact support.")
         else:
-            st.warning("Request saved but email notification failed. Please contact support.")
+            st.error("Failed to submit request. Please try again.")
     else:
         st.error("Please fill in all required fields.")
 
@@ -414,10 +400,9 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# Debug info (optional)
+# Debug info
 if st.sidebar.checkbox("Show Debug Info"):
     st.sidebar.markdown("### Debug Information")
     if 'debug_info' in st.session_state:
         for msg in st.session_state.debug_info:
             st.sidebar.text(msg)
-
