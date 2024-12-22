@@ -5,10 +5,10 @@ import gspread
 from google.oauth2 import service_account
 import io
 import base64
+import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from googleapiclient.errors import HttpError
-from googleapiclient.discovery import build
+import traceback
 
 # Configure Streamlit page
 st.set_page_config(
@@ -31,7 +31,6 @@ class InventoryManager:
                 scopes=[
                     "https://www.googleapis.com/auth/spreadsheets",
                     "https://www.googleapis.com/auth/drive.file",
-                    "https://www.googleapis.com/auth/gmail.send"
                 ]
             )
             self.client = gspread.authorize(credentials)
@@ -71,6 +70,7 @@ class InventoryManager:
             st.error(f"Error adding new PO: {str(e)}")
             return False
 
+
 def generate_po_number(df):
     """Generate unique PO number."""
     current_date = datetime.now()
@@ -93,17 +93,15 @@ def generate_po_number(df):
     
     return f"RD-PO-{year_month}-{sequence_number:04d}"
 
-def send_email_notification(po_data, credentials):
-    """Send email notification with comprehensive error handling."""
+def send_email_notification(po_data):
+    """Send email notification using SMTP."""
     try:
-        # Create Gmail service
-        gmail_service = build('gmail', 'v1', credentials=credentials)
-        
         # Prepare email message
         message = MIMEMultipart()
-        message['to'] = RECIPIENT_EMAIL
-        message['from'] = credentials.service_account_email
-        message['subject'] = f"Purchase request: {po_data['PO Number']}"
+        message['To'] = RECIPIENT_EMAIL
+        message['From'] = po_data['Requester Email']
+        message['Cc'] = po_data['Requester Email']
+        message['Subject'] = f"Purchase request: {po_data['PO Number']}"
 
         email_body = f"""
         <html>
@@ -132,33 +130,34 @@ def send_email_notification(po_data, credentials):
         """
 
         message.attach(MIMEText(email_body, 'html'))
+
+        # Get all recipients (To and Cc)
+        all_recipients = []
+        all_recipients.extend(RECIPIENT_EMAIL.split(','))
+        all_recipients.append(po_data['Requester Email'])
         
-        # Encode message
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        
-        # Send message
-        try:
-            result = gmail_service.users().messages().send(
-                userId=credentials.service_account_email, 
-                body={'raw': raw_message}
-            ).execute()
-            
-            st.success(f"Email sent successfully. Message ID: {result.get('id')}")
-            return True
-        
-        except HttpError as http_err:
-            # More detailed error logging
-            st.error(f"Gmail API Error: {http_err}")
-            st.error(f"Error Response: {http_err.resp.status}")
-            st.error(f"Error Reason: {http_err.resp.reason}")
-            st.error(f"Error Details: {http_err}")
-            return False
-    
+        # Get SMTP settings from secrets
+        smtp_server = st.secrets["email"]["smtp_server"]
+        smtp_port = st.secrets["email"]["smtp_port"]
+        smtp_username = st.secrets["email"]["smtp_username"]
+        smtp_password = st.secrets["email"]["smtp_password"]
+
+        # Create SMTP session
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.send_message(message, 
+                              from_addr=smtp_username,
+                              to_addrs=all_recipients)
+
+        st.success("Email sent successfully!")
+        return True
+
     except Exception as e:
-        st.error(f"Comprehensive Email Sending Error: {str(e)}")
-        import traceback
+        st.error(f"Error sending email: {str(e)}")
         st.error(traceback.format_exc())
         return False
+
 
 def main():
     st.markdown('<h1>R&D Purchase Request (PO) Application</h1>', unsafe_allow_html=True)
@@ -244,7 +243,7 @@ def main():
                     # Save to Google Sheets
                     if inventory_manager.add_new_po(po_data):
                         # Send email notification
-                        if send_email_notification(po_data, inventory_manager.credentials):
+                        if send_email_notification(po_data):
                             st.success("✅ Request submitted successfully!")
                             st.info(f"Your PO Number is: {po_number}")
                             
@@ -265,6 +264,7 @@ def main():
                         st.error("Failed to submit request. Please try again.")
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.error(traceback.format_exc())
         else:
             st.error("Please fill in all required fields.")
 
@@ -278,3 +278,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
