@@ -3,25 +3,33 @@ import pandas as pd
 from datetime import datetime
 import io
 import base64
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from google_auth import get_drive_service, get_gmail_service
+from google_auth import get_drive_service, get_gmail_service, get_google_creds
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # Clear Streamlit cache
 st.cache_data.clear()
 
 # Constants
+SHEET_ID = "1MTMTgGB6J6b_b_2wqHsaxxi5O_La1L34qMus5NC3K-E"
+WORKSHEET_NAME = "PO2025"
+RECIPIENT_EMAIL = 'ermias@ketos.co, girma.seifu@ketos.co'
 DRIVE_FILE_NAME = 'purchase_summary.csv'
 DRIVE_FOLDER_ID = '12lcXSmD_gbItepTW8FuR5mEd_iAKQ_HK'
-RECIPIENT_EMAIL = 'ermias@ketos.co'
 
 # Page configuration
-st.set_page_config(page_title="R&D Purchase Request Application", layout="wide")
+st.set_page_config(
+    page_title="R&D Purchase Request Application",
+    page_icon="🛍️",
+    layout="wide"
+)
 
-# Custom CSS for styling
+# Custom CSS
 st.markdown("""
 <style>
     .main {
@@ -37,35 +45,12 @@ st.markdown("""
     .stSelectbox, .stTextInput, .stTextArea {
         background-color: white;
     }
-    .instructions {
-        background-color: #e1e4e8;
-        padding: 1rem;
-        border-radius: 5px;
-        margin-bottom: 1rem;
-    }
-    .summary-table {
-        margin-top: 2rem;
-    }
     .card {
         background-color: white;
         border-radius: 5px;
         padding: 1rem;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         margin-bottom: 1rem;
-    }
-    h1, h2, h3 {
-        color: #2c3e50;
-    }
-    .sidebar .stButton > button {
-        background-color: #3498db;
-    }
-    .debug-info {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 10px;
-        margin-top: 20px;
-        font-family: monospace;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -74,29 +59,114 @@ st.markdown("""
 try:
     drive_service = get_drive_service()
     gmail_service = get_gmail_service()
+    sheet_service = build('sheets', 'v4', credentials=get_google_creds())
+    if not sheet_service:
+        st.error("Failed to initialize Google Sheets service.")
+        st.stop()
 except GoogleAuthError as e:
     st.error(f"Google authentication error: {str(e)}")
     st.error("Please follow the authorization process to resolve this issue.")
     st.stop()
 except Exception as e:
     st.error(f"Error initializing Google services: {str(e)}")
-    st.error("Please make sure you have set up the Google Drive and Gmail APIs correctly.")
+    st.error("Please make sure you have set up the Google APIs correctly.")
     st.stop()
 
 def log_debug_info(message):
+    """Log debug information to session state"""
     if 'debug_info' not in st.session_state:
         st.session_state.debug_info = []
     st.session_state.debug_info.append(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
-
+def append_to_sheet(values):
+    """Append new row to Google Sheet"""
+    try:
+        range_name = f"{WORKSHEET_NAME}!A:L"
+        body = {
+            'values': [list(values.values())]
+        }
+        result = sheet_service.spreadsheets().values().append(
+            spreadsheetId=SHEET_ID,
+            range=range_name,
+            valueInputOption='RAW',
+            insertDataOption='INSERT_ROWS',
+            body=body
+        ).execute()
         
+        log_debug_info(f"Data appended to sheet: {result.get('updates').get('updatedRange')}")
+        return True
+    except Exception as e:
+        log_debug_info(f"Error appending to sheet: {str(e)}")
+        return False
 
-# Function to find or create the CSV file in Google Drive
+def read_from_sheet():
+    """Read all data from Google Sheet"""
+    try:
+        range_name = f"{WORKSHEET_NAME}!A:L"
+        result = sheet_service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=range_name
+        ).execute()
+        values = result.get('values', [])
+        
+        if not values:
+            return pd.DataFrame(columns=[
+                'PO Number', 'Requester', 'Requester Email', 'Request Date and Time',
+                'Link', 'Quantity', 'Shipment Address', 'Attention To', 'Department',
+                'Description', 'Classification', 'Urgency'
+            ])
+            
+        df = pd.DataFrame(values[1:], columns=values[0])
+        log_debug_info(f"Read {len(df)} rows from sheet")
+        return df
+    except Exception as e:
+        log_debug_info(f"Error reading from sheet: {str(e)}")
+        return None
+
+def verify_file_exists_and_accessible(file_id):
+    """Verify if file exists and is accessible in Google Drive"""
+    try:
+        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size, trashed').execute()
+        if file.get('trashed', False):
+            log_debug_info(f"File {file_id} exists but is in the trash.")
+            return False
+        log_debug_info(f"File verified: {file['name']} (ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes)")
+        return True
+    except HttpError as error:
+        if error.resp.status == 404:
+            log_debug_info(f"File {file_id} not found.")
+        else:
+            log_debug_info(f"Error verifying file {file_id}: {str(error)}")
+        return False
+
+def generate_po_number(df):
+    """Generate unique PO number"""
+    current_date = datetime.now()
+    year_month = current_date.strftime("%y%m")
+    
+    if df.empty:
+        sequence_number = 1
+    else:
+        try:
+            last_po_number = df['PO Number'].iloc[-1]
+            last_year_month = last_po_number.split('-')[2]
+            last_sequence_number = int(last_po_number.split('-')[-1])
+            
+            if last_year_month == year_month:
+                sequence_number = last_sequence_number + 1
+            else:
+                sequence_number = 1
+        except:
+            sequence_number = 1
+    
+    return f"RD-PO-{year_month}-{sequence_number:04d}"
+
 def find_or_create_csv():
+    """Find existing CSV file or create a new one"""
     try:
         log_debug_info("Searching for existing CSV file")
         results = drive_service.files().list(
-            q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv'",
+            q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv' and trashed=false",
             spaces='drive',
             fields='files(id, name, modifiedTime, size)'
         ).execute()
@@ -105,105 +175,51 @@ def find_or_create_csv():
         if files:
             file = files[0]
             file_id = file['id']
-            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
-            
-            # Attempt to read the file content
-            try:
-                content = drive_service.files().get_media(fileId=file_id).execute()
-                log_debug_info(f"File content successfully retrieved. Content length: {len(content)} bytes")
-            except Exception as e:
-                log_debug_info(f"Error reading file content: {str(e)}")
-            
+            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}")
             return file_id
         else:
-            log_debug_info("No existing CSV file found. Creating a new one.")
-            file_metadata = {
-                'name': DRIVE_FILE_NAME,
-                'parents': [DRIVE_FOLDER_ID],
-                'mimeType': 'text/csv'
-            }
-            content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
-            media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
-            file = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-            new_file_id = file.get('id')
-            log_debug_info(f"New CSV file created with ID: {new_file_id}")
-            return new_file_id
+            return create_new_csv()
     except Exception as e:
         log_debug_info(f"Error in find_or_create_csv: {str(e)}")
         return None
 
-def verify_file_accessibility(file_id):
+def create_new_csv():
+    """Create a new CSV file in Google Drive"""
     try:
-        file = drive_service.files().get(fileId=file_id, fields='id, name, modifiedTime, size').execute()
-        log_debug_info(f"File is accessible - Name: {file['name']}, ID: {file['id']}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
-        return True
+        file_metadata = {
+            'name': DRIVE_FILE_NAME,
+            'parents': [DRIVE_FOLDER_ID],
+            'mimeType': 'text/csv'
+        }
+        content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
+        media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        return file.get('id')
     except Exception as e:
-        log_debug_info(f"Error accessing file: {str(e)}")
-        return False
-
-# Function to read CSV from Google Drive
-def read_csv_from_drive(file_id):
-    try:
-        log_debug_info(f"Attempting to read CSV file with ID: {file_id}")
-        request = drive_service.files().get_media(fileId=file_id)
-        file_content = request.execute()
-        df = pd.read_csv(io.BytesIO(file_content))
-        log_debug_info(f"CSV file successfully loaded with {len(df)} records")
-        return df
-    except HttpError as e:
-        log_debug_info(f"HttpError reading CSV from Google Drive: {str(e)}")
-        return None
-    except Exception as e:
-        log_debug_info(f"Unexpected error reading CSV from Google Drive: {str(e)}")
+        log_debug_info(f"Error creating new CSV file: {str(e)}")
         return None
 
-# Function to update CSV in Google Drive
 def update_csv_in_drive(df, file_id):
+    """Update CSV file in Google Drive"""
     try:
-        log_debug_info(f"Attempting to update CSV file with ID: {file_id}")
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         media = MediaIoBaseUpload(io.BytesIO(csv_buffer.getvalue().encode()), mimetype='text/csv', resumable=True)
-        updated_file = drive_service.files().update(
+        drive_service.files().update(
             fileId=file_id,
             media_body=media
         ).execute()
-        
-        if updated_file:
-            log_debug_info(f"CSV file successfully updated. File ID: {updated_file['id']}")
-            return True
-        else:
-            log_debug_info("Failed to update CSV file in Google Drive.")
-            return False
+        return True
     except Exception as e:
         log_debug_info(f"Error updating CSV in Google Drive: {str(e)}")
         return False
 
-# Function to generate PO number
-def generate_po_number(df):
-    current_date = datetime.now()
-    year_month = current_date.strftime("%y%m")
-    
-    if df.empty:
-        sequence_number = 1
-    else:
-        last_po_number = df['PO Number'].iloc[-1]
-        last_year_month = last_po_number.split('-')[2]
-        last_sequence_number = int(last_po_number.split('-')[-1])
-        
-        if last_year_month == year_month:
-            sequence_number = last_sequence_number + 1
-        else:
-            sequence_number = 1
-    
-    return f"RD-PO-{year_month}-{sequence_number:04d}"
-
-# Function to send email
 def send_email(sender_email, subject, email_body):
+    """Send email using Gmail API"""
     try:
         message = MIMEMultipart()
         message['to'] = RECIPIENT_EMAIL
@@ -212,93 +228,55 @@ def send_email(sender_email, subject, email_body):
         message.attach(MIMEText(email_body, 'html'))
         
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        sent_message = gmail_service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
+        sent_message = gmail_service.users().messages().send(
+            userId='me',
+            body={'raw': raw_message}
+        ).execute()
         
         if sent_message:
             log_debug_info(f"Email sent successfully. Message ID: {sent_message['id']}")
             return True
-        else:
-            log_debug_info("Failed to send email. No error was raised, but no message was returned.")
-            return False
-    except HttpError as error:
-        if error.resp.status == 403 and "accessNotConfigured" in str(error):
-            log_debug_info("Gmail API is not enabled. Please enable it in the Google Cloud Console.")
-        else:
-            log_debug_info(f"An error occurred while sending the email: {error}")
         return False
     except Exception as e:
-        log_debug_info(f"An unexpected error occurred while sending the email: {str(e)}")
+        log_debug_info(f"Error sending email: {str(e)}")
         return False
 
+# Initialize or get file ID for CSV backup
+if 'drive_file_id' not in st.session_state:
+    st.session_state.drive_file_id = find_or_create_csv()
+
+# Initialize DataFrame from Google Sheets
+if 'df' not in st.session_state:
+    df = read_from_sheet()
+    if df is not None:
+        st.session_state.df = df
+    else:
+        st.error("Failed to read data from Google Sheets.")
+        st.stop()
+
 # Sidebar
-st.sidebar.title("Application Controls")
+st.sidebar.title("Instructions")
 st.sidebar.markdown("""
-### Instructions
-1. The application will automatically create a CSV file if one doesn't exist.
-2. Click the 'Update Records' button to manually refresh the data from Google Drive.
-3. Fill in the Purchase Request Form in the main area.
-4. Submit the form to create a new PO request.
-5. Use the checkbox below the form to view all submitted requests.
+1. Fill in all required fields in the form.
+2. Review your information before submitting.
+3. Make sure to include your project in the Description.
+4. You will receive an email confirmation.
 """)
 
 # Force Refresh button
 if st.sidebar.button("Force Refresh"):
     st.cache_data.clear()
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    st.session_state.clear()
     st.rerun()
-# Find or create CSV file
-if 'drive_file_id' not in st.session_state or not verify_file_exists_and_accessible(st.session_state.get('drive_file_id')):
-    st.session_state.drive_file_id = find_or_create_csv()
-
-if st.session_state.get('drive_file_id'):
-    if verify_file_exists_and_accessible(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
-            df = read_csv_from_drive(st.session_state.drive_file_id)
-            if df is not None:
-                st.session_state.df = df
-                st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
-            else:
-                st.sidebar.error("Failed to update records. Please try again.")
-                st.session_state.drive_file_id = find_or_create_csv()
-    else:
-        st.error("The CSV file is not accessible. Attempting to create a new one.")
-        st.session_state.drive_file_id = find_or_create_csv()
-else:
-    st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
-    st.stop()
-
-# Find or create CSV file
-if 'drive_file_id' not in st.session_state or not verify_file_accessibility(st.session_state.drive_file_id):
-    st.session_state.drive_file_id = find_or_create_csv()
-
-if st.session_state.drive_file_id:
-    if verify_file_accessibility(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
-            df = read_csv_from_drive(st.session_state.drive_file_id)
-            if df is not None:
-                st.session_state.df = df
-                st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
-            else:
-                st.sidebar.error("Failed to update records. Please try again.")
-                st.session_state.drive_file_id = find_or_create_csv()
-    else:
-        st.error("The CSV file exists but is not accessible. Attempting to create a new one.")
-        st.session_state.drive_file_id = find_or_create_csv()
-else:
-    st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
-    st.stop()
-
 
 # Main content
-
-    
 st.title("R&D Purchase Request (PO) Application")
 
 # Input form
 st.markdown("<div class='card'>", unsafe_allow_html=True)
-with st.form("po_request_form"):
-    st.subheader("Purchase Request Form")
+with st.form("po_request_form", clear_on_submit=True):
+    st.markdown("### Purchase Request Form")
+    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -306,29 +284,43 @@ with st.form("po_request_form"):
         requester_email = st.text_input("Requester Email")
         link = st.text_input("Link to Item(s)")
         quantity = st.number_input("Quantity of Item(s)", min_value=1, value=1)
-        shipment_address = st.text_input("Shipment Address", value="420 S Hillview Dr, Milpitas, CA 95035")
-    
+        shipment_address = st.text_input("Shipment Address", 
+                                       value="420 S Hillview Dr, Milpitas, CA 95035")
+
     with col2:
         attention_to = st.text_input("Attention To")
         department = st.text_input("Department", value="R&D", disabled=True)
-        description = st.text_area("Brief Description of Use")
-        classification = st.selectbox("Classification Code", [
-            "6051 - Lab Supplies (including Chemicals)",
-            "6052 - Testing (Outside Lab Validation)",
-            "6055 - Parts & Tools",
-            "6054 - Prototype",
-            "6053 - Other"
-        ])
+        description = st.text_area("Brief Description of Use",
+                                 help="Include your project name/number")
+        classification = st.selectbox(
+            "Classification Code",
+            [
+                "6051 - Lab Supplies (including Chemicals)",
+                "6052 - Testing (Outside Lab Validation)",
+                "6055 - Parts & Tools",
+                "6054 - Prototype",
+                "6053 - Other"
+            ]
+        )
         urgency = st.selectbox("Urgency", ["Normal", "Urgent"])
-    
-    submitted = st.form_submit_button("Submit Request")
+
+    submitted = st.form_submit_button("Submit Request", use_container_width=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 if submitted:
-    if requester and requester_email and link and description and attention_to:
-        po_number = generate_po_number(st.session_state.df)
+    if all([requester, requester_email, link, attention_to, description]):
+        # First read latest data from sheet
+        latest_df = read_from_sheet()
+        if latest_df is not None:
+            st.session_state.df = latest_df
+            po_number = generate_po_number(latest_df)
+        else:
+            po_number = generate_po_number(st.session_state.df)
+        
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Prepare new data
         new_data = {
             "PO Number": po_number,
             "Requester": requester,
@@ -344,68 +336,73 @@ if submitted:
             "Urgency": urgency
         }
         
-        # Append to DataFrame
-        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
-        
-        # Update CSV in Google Drive
-        if update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id):
-            st.success("Request submitted and synced to Google Drive!")
+        # Save to Google Sheet
+        if append_to_sheet(new_data):
+            st.success("Request submitted to Google Sheet!")
+            
+            # Update local DataFrame and CSV backup
+            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+            update_csv_in_drive(st.session_state.df, st.session_state.drive_file_id)
+            
+            # Prepare and send email
+            email_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <p><b>RE: New Purchase Request</b></p>
+                    <p>Dear Ordering,</p>
+                    <p>R&D would like to order the following:</p>
+                    <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">PO Number</th><td style="padding: 8px; border: 1px solid #dee2e6;">{po_number}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Requester</th><td style="padding: 8px; border: 1px solid #dee2e6;">{requester}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Request Date and Time</th><td style="padding: 8px; border: 1px solid #dee2e6;">{request_datetime}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Link to Item(s)</th><td style="padding: 8px; border: 1px solid #dee2e6;">{link}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Quantity</th><td style="padding: 8px; border: 1px solid #dee2e6;">{quantity}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Shipment Address</th><td style="padding: 8px; border: 1px solid #dee2e6;">{shipment_address}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Attention To</th><td style="padding: 8px; border: 1px solid #dee2e6;">{attention_to}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Department</th><td style="padding: 8px; border: 1px solid #dee2e6;">{department}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Description</th><td style="padding: 8px; border: 1px solid #dee2e6;">{description}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Classification</th><td style="padding: 8px; border: 1px solid #dee2e6;">{classification}</td></tr>
+                        <tr><th style="text-align: left; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6;">Urgency</th><td style="padding: 8px; border: 1px solid #dee2e6;">{urgency}</td></tr>
+                    </table>
+                    <p>Regards,<br>{requester}</p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            if send_email(requester_email, f"Purchase request: {po_number}", email_body):
+                st.success("✅ Email sent successfully!")
+                
+                # Show confirmation details
+                with st.expander("View Request Details", expanded=True):
+                    st.markdown(f"""
+                        ### Request Summary
+                        - **PO Number**: {po_number}
+                        - **Requester**: {requester}
+                        - **Email**: {requester_email}
+                        - **Link**: {link}
+                        - **Quantity**: {quantity}
+                        - **Urgency**: {urgency}
+                    """)
+            else:
+                st.warning("Request saved but email notification failed. Please contact support.")
         else:
-            st.error("Failed to sync request to Google Drive. Please try again.")
-        
-        # Email body
-        email_body = f"""
-        <html>
-        <body>
-        <h2>New Purchase Request</h2>
-        <p>Dear Ordering,</p>
-        <p>R&D would like to order the following:</p>
-        <table border="1" cellpadding="5" cellspacing="0">
-            <tr><th align="left"><b>PO Number</b></th><td>{po_number}</td></tr>
-            <tr><th align="left"><b>Requester</b></th><td>{requester}</td></tr>
-            <tr><th align="left"><b>Request Date and Time</b></th><td>{request_datetime}</td></tr>
-            <tr><th align="left"><b>Link to Item(s)</b></th><td>{link}</td></tr>
-            <tr><th align="left"><b>Quantity of Item(s)</b></th><td>{quantity}</td></tr>
-            <tr><th align="left"><b>Shipment Address</b></th><td>{shipment_address}</td></tr>
-            <tr><th align="left"><b>Attention To</b></th><td>{attention_to}</td></tr>
-            <tr><th align="left"><b>Department</b></th><td>{department}</td></tr>
-            <tr><th align="left"><b>Description of Use</b></th><td>{description}</td></tr>
-            <tr><th align="left"><b>Classification Code</b></th><td>{classification}</td></tr>
-            <tr><th align="left"><b>Urgency</b></th><td>{urgency}</td></tr>
-        </table>
-        <p>Regards,<br>{requester}</p>
-        </body>
-        </html>
-        """
-        
-        # Send email
-        if send_email(requester_email, f"Purchase request: {po_number}", email_body):
-            st.success("Email sent successfully!")
-        else:
-            st.error("Failed to send email. Please contact the IT department.")
-        
-        st.subheader("Email Preview")
-        st.markdown(email_body, unsafe_allow_html=True)
+            st.error("Failed to submit request. Please try again.")
     else:
         st.error("Please fill in all required fields.")
 
-# Summary table
-show_summary = st.checkbox("Show Purchase Request Summary")
-
-if show_summary:
-    st.markdown("<div class='card summary-table'>", unsafe_allow_html=True)
-    st.subheader("Purchase Request Summary")
-    st.dataframe(st.session_state.df.style.set_properties(**{'background-color': '#f0f5ff', 'color': 'black'}))
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# Debug Information
-if st.checkbox("Show Debug Information"):
-    st.markdown("<div class='debug-info'>", unsafe_allow_html=True)
-    st.subheader("Debug Information")
-    for log in st.session_state.debug_info:
-        st.text(log)
-    st.markdown("</div>", unsafe_allow_html=True)
-
 # Footer
 st.markdown("---")
-st.markdown("© 2023 R&D Purchase Request Application. All rights reserved.")
+st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        © 2024 KETOS R&D Purchase Request Application
+    </div>
+""", unsafe_allow_html=True)
+
+# Debug info
+if st.sidebar.checkbox("Show Debug Info"):
+    st.sidebar.markdown("### Debug Information")
+    if 'debug_info' in st.session_state:
+        for msg in st.session_state.debug_info:
+            st.sidebar.text(msg)
