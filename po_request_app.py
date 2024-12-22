@@ -66,13 +66,13 @@ try:
         #st.error("Failed to initialize Google Sheets service.")
         #st.stop()
 except GoogleAuthError as e:
-        st.error(f"Google authentication error: {str(e)}")
-        st.error("Please follow the authorization process to resolve this issue.")
-        st.stop()
+    st.error(f"Google authentication error: {str(e)}")
+    st.error("Please follow the authorization process to resolve this issue.")
+    st.stop()
 except Exception as e:
-        st.error(f"Error initializing Google services: {str(e)}")
-        st.error("Please make sure you have set up the Google APIs correctly.")
-        st.stop()
+    st.error(f"Error initializing Google services: {str(e)}")
+    st.error("Please make sure you have set up the Google APIs correctly.")
+    st.stop()
 
 def log_debug_info(message):
     """Log debug information to session state"""
