@@ -259,13 +259,15 @@ if st.sidebar.button("Force Refresh"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
-# Find or create CSV file
+    
+# Initialize or get file ID
 if 'drive_file_id' not in st.session_state or not verify_file_exists_and_accessible(st.session_state.get('drive_file_id')):
     st.session_state.drive_file_id = find_or_create_csv()
 
 if st.session_state.get('drive_file_id'):
     if verify_file_exists_and_accessible(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
+        # Add a unique key to the button
+        if st.sidebar.button("Update Records", key="update_records_btn") or 'df' not in st.session_state:
             df = read_csv_from_drive(st.session_state.drive_file_id)
             if df is not None:
                 st.session_state.df = df
@@ -280,26 +282,6 @@ else:
     st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
     st.stop()
 
-# Find or create CSV file
-if 'drive_file_id' not in st.session_state or not verify_file_accessibility(st.session_state.drive_file_id):
-    st.session_state.drive_file_id = find_or_create_csv()
-
-if st.session_state.drive_file_id:
-    if verify_file_accessibility(st.session_state.drive_file_id):
-        if st.sidebar.button("Update Records") or 'df' not in st.session_state:
-            df = read_csv_from_drive(st.session_state.drive_file_id)
-            if df is not None:
-                st.session_state.df = df
-                st.sidebar.success(f"CSV file successfully loaded with {len(df)} existing records.")
-            else:
-                st.sidebar.error("Failed to update records. Please try again.")
-                st.session_state.drive_file_id = find_or_create_csv()
-    else:
-        st.error("The CSV file exists but is not accessible. Attempting to create a new one.")
-        st.session_state.drive_file_id = find_or_create_csv()
-else:
-    st.error("Unable to find or create the CSV file. Please check your Google Drive permissions and try again.")
-    st.stop()
 
 
 # Main content
