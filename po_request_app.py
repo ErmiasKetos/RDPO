@@ -19,7 +19,7 @@ st.set_page_config(
 
 # Constants
 SHEET_ID = "1MTMTgGB6J6b_b_2wqHsaxxi5O_La1L34qMus5NC3K-E"
-WORKSHEET_NAME = "Sheet1"
+WORKSHEET_NAME = "PO2025"
 RECIPIENT_EMAIL = 'ermias@ketos.co, girma.seifu@ketos.co'
 
 class InventoryManager:
