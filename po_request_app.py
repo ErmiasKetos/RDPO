@@ -94,9 +94,18 @@ def log_debug_info(message):
 # Function to find or create the CSV file in Google Drive
 def find_or_create_csv():
     try:
+        # First, verify folder access
+        try:
+            folder = drive_service.files().get(fileId=DRIVE_FOLDER_ID).execute()
+            log_debug_info(f"Successfully accessed folder: {folder['name']}")
+        except Exception as e:
+            log_debug_info(f"Error accessing folder: {str(e)}")
+            st.error(f"Cannot access folder: {str(e)}")
+            return None
+
         log_debug_info("Searching for existing CSV file")
         results = drive_service.files().list(
-            q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv'",
+            q=f"name='{DRIVE_FILE_NAME}' and '{DRIVE_FOLDER_ID}' in parents and mimeType='text/csv' and trashed=false",
             spaces='drive',
             fields='files(id, name, modifiedTime, size)'
         ).execute()
@@ -105,35 +114,14 @@ def find_or_create_csv():
         if files:
             file = files[0]
             file_id = file['id']
-            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}, Modified: {file['modifiedTime']}, Size: {file['size']} bytes")
-            
-            # Attempt to read the file content
-            try:
-                content = drive_service.files().get_media(fileId=file_id).execute()
-                log_debug_info(f"File content successfully retrieved. Content length: {len(content)} bytes")
-            except Exception as e:
-                log_debug_info(f"Error reading file content: {str(e)}")
-            
+            log_debug_info(f"File found - Name: {file['name']}, ID: {file_id}")
             return file_id
         else:
             log_debug_info("No existing CSV file found. Creating a new one.")
-            file_metadata = {
-                'name': DRIVE_FILE_NAME,
-                'parents': [DRIVE_FOLDER_ID],
-                'mimeType': 'text/csv'
-            }
-            content = 'PO Number,Requester,Requester Email,Request Date and Time,Link,Quantity,Shipment Address,Attention To,Department,Description,Classification,Urgency\n'
-            media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='text/csv', resumable=True)
-            file = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-            new_file_id = file.get('id')
-            log_debug_info(f"New CSV file created with ID: {new_file_id}")
-            return new_file_id
+            return create_new_csv()
     except Exception as e:
         log_debug_info(f"Error in find_or_create_csv: {str(e)}")
+        st.error(f"Error accessing Drive: {str(e)}")
         return None
 
 def verify_file_accessibility(file_id):
