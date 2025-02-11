@@ -23,17 +23,18 @@ def update_google_sheet(form_data):
         return False
 
     try:
-        # Replace with your actual Google Sheet ID
-        SHEET_ID = "1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY"
-        sheet = client.open_by_key(SHEET_ID)
+        SHEET_ID = "1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY"  # Your Google Sheet ID
+        sheet = client.open_by_key(SHEET_ID)  # ✅ Get the spreadsheet
 
+        # Debug: List available worksheets
         sheet_names = [ws.title for ws in sheet.worksheets()]
-        st.write(f"Available worksheets: {sheet_names}")
+        st.write(f"Available worksheets: {sheet_names}")  # Show available sheets
 
-        worksheet = sheet.worksheet("Sheet1")
+        # Ensure we are accessing the correct worksheet (Sheet1)
+        worksheet = sheet.worksheet("Sheet1")  # ✅ Use "Sheet1" instead of "purchase_summary"
 
-        # Append new row with form data
-        sheet.append_row([
+        # Append the new row to the sheet
+        worksheet.append_row([
             form_data['PO Number'],
             form_data['Requester'],
             form_data['Requester Email'],
@@ -47,6 +48,8 @@ def update_google_sheet(form_data):
             form_data['Classification'],
             form_data['Urgency']
         ])
+        
+        st.success("✅ Data successfully added to Google Sheets!")
         return True
     except Exception as e:
         st.error(f"Error updating Google Sheet: {str(e)}")
@@ -61,15 +64,17 @@ def test_google_sheet_connection():
 
     try:
         SHEET_ID = "1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY"
-        sheet = client.open_by_key(SHEET_ID)
+        sheet = client.open_by_key(SHEET_ID)  # ✅ Get the spreadsheet
 
-        # List available worksheets
+        # Debug: List available worksheets
         sheet_names = [ws.title for ws in sheet.worksheets()]
-        st.write(f"Available worksheets: {sheet_names}")  # Debugging output
+        st.write(f"Available worksheets: {sheet_names}")  # Show available sheets
 
-        worksheet = sheet.worksheet("Sheet1")  # Make sure the name is correct
+        # Ensure correct sheet name
+        worksheet = sheet.worksheet("Sheet1")  # ✅ Use "Sheet1"
+
+        # Append a test row to verify access
         worksheet.append_row(["Test", "Connection"])
         st.success("✅ Google Sheets API connection successful!")
     except Exception as e:
         st.error(f"Google Sheets access error: {str(e)}")
-
