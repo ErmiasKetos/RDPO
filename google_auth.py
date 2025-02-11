@@ -1,10 +1,10 @@
 import streamlit as st
+import json
+import os
 import pickle
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-import base64
-from email.mime.text import MIMEText
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/userinfo.email", "openid"]
 TOKEN_PATH = "token.pickle"
@@ -13,35 +13,58 @@ def authenticate_user():
     """Authenticate user via Google OAuth and return their email."""
     creds = None
 
-    if st.secrets.get("google_oauth_client"):
-        client_config = {
-            "web": {
-                "client_id": st.secrets["google_oauth_client"]["client_id"],
-                "client_secret": st.secrets["google_oauth_client"]["client_secret"],
-                "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
-                "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
-                "token_uri": st.secrets["google_oauth_client"]["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
+    # Load stored token if it exists
+    if os.path.exists(TOKEN_PATH):
+        with open(TOKEN_PATH, "rb") as token:
+            creds = pickle.load(token)
+
+    # If token is expired or not available, refresh or request new authentication
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            # Use Streamlit secrets instead of a JSON file
+            client_config = {
+                "web": {
+                    "client_id": st.secrets["google_oauth_client"]["client_id"],
+                    "client_secret": st.secrets["google_oauth_client"]["client_secret"],
+                    "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
+                    "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
+                    "token_uri": st.secrets["google_oauth_client"]["token_uri"],
+                    "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
+                }
             }
-        }
 
-        flow = Flow.from_client_config(client_config, SCOPES)
-        flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
+            flow = Flow.from_client_config(client_config, SCOPES)
+            flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
 
-        auth_url, _ = flow.authorization_url(prompt="consent")
-        st.markdown(f"[Click here to log in with Google]({auth_url})")
-        return None  # Stop execution until user logs in
+            auth_url, _ = flow.authorization_url(prompt="consent")
 
-    else:
-        st.error("Google OAuth credentials are missing. Please update your Streamlit secrets.")
-        return None
+            # Show login button
+            st.markdown(f"[Click here to log in with Google]({auth_url})")
+            st.stop()  # Prevent further execution until login completes
+
+            # After login, fetch the credentials
+            creds = flow.run_local_server(port=0)
+
+            # Save token for future use
+            with open(TOKEN_PATH, "wb") as token:
+                pickle.dump(creds, token)
+
+    # Fetch user email after successful authentication
+    user_info_service = build("oauth2", "v2", credentials=creds)
+    user_info = user_info_service.userinfo().get().execute()
+
+    return user_info.get("email")
 
 def get_gmail_service():
     """Authenticate and return Gmail API service."""
     creds = None
-    if st.secrets.get("google_oauth_client"):
-        if TOKEN_PATH and pickle.load(open(TOKEN_PATH, "rb")):
-            creds = pickle.load(open(TOKEN_PATH, "rb"))
+
+    # Load stored token if available
+    if os.path.exists(TOKEN_PATH):
+        with open(TOKEN_PATH, "rb") as token:
+            creds = pickle.load(token)
 
     if not creds or not creds.valid:
         return None
