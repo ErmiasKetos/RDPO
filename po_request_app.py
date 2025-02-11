@@ -107,6 +107,6 @@ if submitted:
     else:
         st.error("Please fill in all required fields.")
 
-    if st.button("Test Google Sheets Connection"):
-        test_google_sheet_connection()
+if st.button("Test Google Sheets Connection"):
+    test_google_sheet_connection()
 
