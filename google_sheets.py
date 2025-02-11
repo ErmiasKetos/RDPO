@@ -23,7 +23,7 @@ def update_google_sheet(form_data):
         return False
 
     try:
-        sheet = client.open_by_key("YOUR_SHEET_ID").worksheet("purchase_summary")
+        sheet = client.open_by_key("Sheet1").worksheet("purchase_summary")
         sheet.append_row([
             form_data['PO Number'],
             form_data['Requester'],
