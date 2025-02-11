@@ -1,5 +1,4 @@
 import streamlit as st
-import json
 import pickle
 import os
 from google_auth_oauthlib.flow import Flow
@@ -18,7 +17,7 @@ def authenticate_user():
     # Check if OAuth credentials exist in session state
     if "google_auth_creds" in st.session_state:
         creds = pickle.loads(st.session_state["google_auth_creds"])
-    
+
     # If token is expired or missing, request authentication
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -40,18 +39,21 @@ def authenticate_user():
                 flow = Flow.from_client_config(client_config, SCOPES)
                 flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
 
-                # If user has already logged in, fetch token from query parameters
-                query_params = st.experimental_get_query_params()
+                # If user is logging in, fetch token from query parameters
+                query_params = st.query_params  # ✅ UPDATED
                 if "code" in query_params:
                     flow.fetch_token(code=query_params["code"][0])
                     creds = flow.credentials
+
+                    # Store credentials in session state
                     st.session_state["google_auth_creds"] = pickle.dumps(creds)
+                    st.rerun()  # ✅ RESTART THE APP AFTER LOGIN
 
                 # If user is not logged in, show login link
                 if not creds or not creds.valid:
                     auth_url, _ = flow.authorization_url(prompt="consent")
                     st.markdown(f"[Click here to log in with Google]({auth_url})")
-                    st.stop()
+                    st.stop()  # Stop execution until user logs in
 
     # Fetch user email after authentication
     user_info_service = build("oauth2", "v2", credentials=creds)
