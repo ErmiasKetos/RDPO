@@ -1,5 +1,5 @@
 import streamlit as st
-from google_sheets import update_google_sheet
+from google_sheets import update_google_sheet, test_google_sheet_connection
 from datetime import datetime
 from email.mime.text import MIMEText
 from google_auth import get_gmail_service
