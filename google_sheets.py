@@ -5,7 +5,6 @@ from google.oauth2.service_account import Credentials
 # Define the Google Sheets scope
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Function to get Google Sheets client
 def get_google_sheets_client():
     """Authenticate and return a Google Sheets client."""
     try:
@@ -17,7 +16,6 @@ def get_google_sheets_client():
         st.error(f"Error connecting to Google Sheets: {str(e)}")
         return None
 
-# Function to update Google Sheets with a new purchase order
 def update_google_sheet(form_data):
     """Append a new purchase request to the Google Sheet."""
     client = get_google_sheets_client()
@@ -25,10 +23,7 @@ def update_google_sheet(form_data):
         return False
 
     try:
-        # Open the Google Sheet by ID
         sheet = client.open_by_key("YOUR_SHEET_ID").worksheet("purchase_summary")
-
-        # Append new row
         sheet.append_row([
             form_data['PO Number'],
             form_data['Requester'],
