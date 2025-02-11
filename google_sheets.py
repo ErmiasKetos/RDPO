@@ -60,12 +60,16 @@ def test_google_sheet_connection():
         return
 
     try:
-        # Replace with your actual Google Sheet ID
         SHEET_ID = "1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY"
-        sheet = client.open_by_key(SHEET_ID).worksheet("purchase_summary")
+        sheet = client.open_by_key(SHEET_ID)
 
-        # Append a test row to verify access
-        sheet.append_row(["Test", "Connection"])
+        # List available worksheets
+        sheet_names = [ws.title for ws in sheet.worksheets()]
+        st.write(f"Available worksheets: {sheet_names}")  # Debugging output
+
+        worksheet = sheet.worksheet("Sheet1")  # Make sure the name is correct
+        worksheet.append_row(["Test", "Connection"])
         st.success("✅ Google Sheets API connection successful!")
     except Exception as e:
         st.error(f"Google Sheets access error: {str(e)}")
+
