@@ -1,93 +1,112 @@
 import streamlit as st
-import pickle
-import os
+import base64
+from email.mime.text import MIMEText
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-import base64
-from email.mime.text import MIMEText
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/userinfo.email", "openid"]
-TOKEN_PATH = "token.pickle"
+# Configuration
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "openid"
+]
 
 def authenticate_user():
-    """Authenticate user via Google OAuth and return their email."""
-    creds = None
+    """Modernized authentication flow with better error handling"""
+    if 'google_auth' not in st.session_state:
+        st.session_state.google_auth = {
+            'creds': None,
+            'email': None
+        }
 
-    # Check if OAuth credentials exist in session state
-    if "google_auth_creds" in st.session_state:
-        creds = pickle.loads(st.session_state["google_auth_creds"])
+    # Return cached credentials if valid
+    if st.session_state.google_auth['creds'] and st.session_state.google_auth['creds'].valid:
+        return st.session_state.google_auth['email']
 
-    # If token is expired or missing, request authentication
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            # Read credentials from Streamlit Secrets
-            if st.secrets.get("google_oauth_client"):
-                client_config = {
-                    "web": {
-                        "client_id": st.secrets["google_oauth_client"]["client_id"],
-                        "client_secret": st.secrets["google_oauth_client"]["client_secret"],
-                        "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
-                        "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
-                        "token_uri": st.secrets["google_oauth_client"]["token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
-                    }
+    # Initialize OAuth flow
+    client_config = st.secrets["google_oauth_client"]
+    flow = Flow.from_client_config(
+        client_config=client_config,
+        scopes=SCOPES,
+        redirect_uri=client_config['web']['redirect_uris'][0]
+    )
+
+    # Handle OAuth callback
+    query_params = st.experimental_get_query_params()
+    if 'code' in query_params:
+        with st.spinner("Authenticating..."):
+            try:
+                flow.fetch_token(code=query_params['code'][0])
+                creds = flow.credentials
+                
+                # Get user info
+                user_info_service = build("oauth2", "v2", credentials=creds)
+                user_info = user_info_service.userinfo().get().execute()
+                
+                # Store in session state
+                st.session_state.google_auth = {
+                    'creds': creds,
+                    'email': user_info['email']
                 }
+                st.experimental_set_query_params()  # Clear URL params
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Authentication failed: {str(e)}")
+                st.stop()
 
-                flow = Flow.from_client_config(client_config, SCOPES)
-                flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
+    # Show login button if not authenticated
+    if not st.session_state.google_auth['creds']:
+        st.markdown(f"""
+        <div style='text-align: center; margin: 2rem;'>
+            <a href="{flow.authorization_url()[0]}" target="_self">
+                <button style='
+                    background: #4285F4;
+                    color: white;
+                    padding: 12px 24px;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 16px;
+                    cursor: pointer;
+                '>
+                    <strong>🔑 Continue with Google</strong>
+                </button>
+            </a>
+            <p style='margin-top: 1rem; color: #666;'>
+                You must use your @ketos.co email to access this system
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
 
-                # If user is logging in, fetch token from query parameters
-                query_params = st.query_params  # ✅ UPDATED
-                if "code" in query_params:
-                    flow.fetch_token(code=query_params["code"][0])
-                    creds = flow.credentials
-
-                    # Store credentials in session state
-                    st.session_state["google_auth_creds"] = pickle.dumps(creds)
-                    st.rerun()  # ✅ RESTART THE APP AFTER LOGIN
-
-                # If user is not logged in, show login link
-                if not creds or not creds.valid:
-                    auth_url, _ = flow.authorization_url(prompt="consent")
-                    st.markdown(f"[Click here to log in with Google]({auth_url})")
-                    st.stop()  # Stop execution until user logs in
-
-    # Fetch user email after authentication
-    user_info_service = build("oauth2", "v2", credentials=creds)
-    user_info = user_info_service.userinfo().get().execute()
-
-    return user_info.get("email")
-
-def get_gmail_service():
-    """Authenticate and return Gmail API service."""
-    if "google_auth_creds" in st.session_state:
-        creds = pickle.loads(st.session_state["google_auth_creds"])
-        return build("gmail", "v1", credentials=creds)
-    return None
+    return st.session_state.google_auth['email']
 
 def send_email(sender_email, subject, email_body):
-    """Send an email notification using the logged-in user's Gmail account."""
+    """Improved email sending with better error handling"""
     try:
-        gmail_service = get_gmail_service()
-        if not gmail_service:
-            st.warning("Please log in with Google to send emails.")
+        if 'google_auth' not in st.session_state or not st.session_state.google_auth['creds']:
+            st.error("Authentication required to send emails")
             return False
 
-        recipient_email = "ermias@ketos.co"  # PO approver email
-
-        message = MIMEText(email_body, 'html')
-        message['to'] = recipient_email
-        message['from'] = sender_email
-        message['subject'] = subject
-
-        raw_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}
-        gmail_service.users().messages().send(userId="me", body=raw_message).execute()
+        service = build('gmail', 'v1', credentials=st.session_state.google_auth['creds'])
         
-        st.success("✅ Email successfully sent to the PO approver!")
+        message = MIMEText(email_body, 'html')
+        message['to'] = "ermias@ketos.co"
+        message['from'] = f"Ketos PO System <{sender_email}>"
+        message['subject'] = subject
+        
+        raw_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}
+        
+        with st.spinner("Sending notification..."):
+            service.users().messages().send(
+                userId="me",
+                body=raw_message
+            ).execute()
+        
+        st.toast("📧 Email sent successfully!", icon="✅")
         return True
+        
     except Exception as e:
-        st.error(f"Error sending email: {str(e)}")
+        st.error(f"Failed to send email: {str(e)}")
         return False
