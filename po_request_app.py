@@ -105,19 +105,49 @@ def handle_submission(user_email, requester, link, quantity, attention, urgency,
         except Exception as e:
             st.error(f"❌ Submission failed: {str(e)}")
 
+
 def send_confirmation(user_email, po_data):
+    """Recreate the original email body with modern styling"""
     email_html = f"""
     <html>
-        <body>
-            <h2 style='color: #2a3f5f;'>New Purchase Request: {po_data['PO Number']}</h2>
-            <div style='padding: 20px; background: #f8f9fa; border-radius: 10px;'>
-                {pd.DataFrame.from_dict(po_data, orient='index').to_html()}
-            </div>
-            <p style='margin-top: 20px;'>Submitted by: {user_email}</p>
-        </body>
+    <body style="font-family: Arial, sans-serif;">
+        <h2 style="color: #2a3f5f; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">
+            New Purchase Request: {po_data['PO Number']}
+        </h2>
+        
+        <div style="margin: 20px 0;">
+            <p>Dear Approver,</p>
+            <p>A new purchase request has been submitted:</p>
+            
+            <table style="border-collapse: collapse; width: 100%; margin: 20px 0;">
+                <tr style="background-color: #f8f9fa;">
+                    <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">Field</th>
+                    <td style="padding: 12px; border: 1px solid #ddd; text-align: left;">Value</td>
+                </tr>
+                <tr><th>PO Number</th><td>{po_data['PO Number']}</td></tr>
+                <tr><th>Requester</th><td>{po_data['Requester']}</td></tr>
+                <tr><th>Requester Email</th><td>{user_email}</td></tr>
+                <tr><th>Request Date</th><td>{po_data['Timestamp']}</td></tr>
+                <tr><th>Item URL</th><td><a href="{po_data['Item URL']}">{po_data['Item URL']}</a></td></tr>
+                <tr><th>Quantity</th><td>{po_data['Quantity']}</td></tr>
+                <tr><th>Attention To</th><td>{po_data['Attention']}</td></tr>
+                <tr><th>Category</th><td>{po_data['Category']}</td></tr>
+                <tr><th>Urgency</th><td>{po_data['Urgency']}</td></tr>
+                <tr><th>Description</th><td>{po_data['Description']}</td></tr>
+            </table>
+            
+            <p style="margin-top: 20px;">
+                Regards,<br>
+                <strong>{po_data['Requester']}</strong><br>
+                <em>R&D Team</em>
+            </p>
+        </div>
+    </body>
     </html>
     """
-    send_email(user_email, f"New PO Request: {po_data['PO Number']}", email_html)
+    
+    # Send using the original email logic
+    send_email(user_email, f"Purchase Request: {po_data['PO Number']}", email_html)
 
 if __name__ == "__main__":
     main()
