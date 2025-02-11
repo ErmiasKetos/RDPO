@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 import pickle
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -15,34 +14,35 @@ def authenticate_user():
     creds = None
 
     # Load credentials from token.pickle if available
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as token:
-            creds = pickle.load(token)
+    if st.secrets.get("google_oauth_client"):
+        client_config = {
+            "web": {
+                "client_id": st.secrets["google_oauth_client"]["client_id"],
+                "client_secret": st.secrets["google_oauth_client"]["client_secret"],
+                "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
+                "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
+                "token_uri": st.secrets["google_oauth_client"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
+            }
+        }
 
-    # If credentials are invalid, request new authorization
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = Flow.from_client_secrets_file("client_secret.json", SCOPES)
-            flow.redirect_uri = "https://ntsmv7uynenkazkeftozjx.streamlit.app/_stcore/authorize"
+        flow = Flow.from_client_config(client_config, SCOPES)
+        flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
 
-            auth_url, _ = flow.authorization_url(prompt="consent")
-            st.markdown(f"[Click here to log in with Google]({auth_url})")
-            return None  # Stop execution until user logs in
+        auth_url, _ = flow.authorization_url(prompt="consent")
+        st.markdown(f"[Click here to log in with Google]({auth_url})")
+        return None  # Stop execution until user logs in
 
-    # Fetch user email after authentication
-    user_info_service = build("oauth2", "v2", credentials=creds)
-    user_info = user_info_service.userinfo().get().execute()
-
-    return user_info.get("email")
+    else:
+        st.error("Google OAuth credentials are missing. Please update your Streamlit secrets.")
+        return None
 
 def get_gmail_service():
     """Authenticate and return Gmail API service."""
     creds = None
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as token:
-            creds = pickle.load(token)
+    if st.secrets.get("google_oauth_client"):
+        if TOKEN_PATH and pickle.load(open(TOKEN_PATH, "rb")):
+            creds = pickle.load(open(TOKEN_PATH, "rb"))
 
     if not creds or not creds.valid:
         return None
