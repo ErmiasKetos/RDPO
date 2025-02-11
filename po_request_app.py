@@ -4,102 +4,120 @@ from datetime import datetime
 from google_sheets import update_google_sheet
 from google_auth import authenticate_user, send_email
 
-# Modern UI Setup
-st.set_page_config(page_title="R&D Purchase Request", layout="wide")
+# Modern UI Configuration
+st.set_page_config(
+    page_title="Ketos PO System",
+    page_icon="📦",
+    layout="centered",
+    initial_sidebar_state="expanded"
+)
 
-# Authenticate User
-user_email = authenticate_user()
-if not user_email:
-    st.warning("You must log in with your Ketos email (@ketos.co) to submit a request.")
-    st.stop()
+# Custom CSS Styling
+st.markdown("""
+    <style>
+        .main {background-color: #f8f9fa;}
+        h1 {color: #2a3f5f;}
+        .stForm {border: 1px solid #e1e4e8; border-radius: 10px; padding: 2rem;}
+        .stButton>button {background-color: #4CAF50; color: white; border-radius: 5px;}
+        .required:after {content: " *"; color: red;}
+        .success-box {padding: 1.5rem; border-radius: 10px; background-color: #e6f4ea;}
+    </style>
+""", unsafe_allow_html=True)
 
-# Restrict access to only Ketos employees
-if not user_email.endswith("@ketos.co"):
-    st.error("Access Denied: You must use a Ketos email to proceed.")
-    st.stop()
+# Authentication
+def main():
+    user_email = authenticate_user()
+    
+    if not user_email or not user_email.endswith("@ketos.co"):
+        st.error("🔒 Please login with your @ketos.co email")
+        st.stop()
 
-st.success(f"✅ Logged in as: {user_email}")
+    st.sidebar.success(f"Logged in as: {user_email}")
+    app_interface(user_email)
 
-# Main Page Header
-st.title("📦 R&D Purchase Order Request")
+# Main Application Interface
+def app_interface(user_email):
+    st.title("📦 R&D Purchase Request System")
+    
+    with st.expander("➕ New Purchase Request", expanded=True):
+        with st.form("po_form"):
+            # Form Layout
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown('<p class="required">Requester Name</p>', unsafe_allow_html=True)
+                requester = st.text_input("Requester Name", placeholder="John Doe", label_visibility="collapsed")
+                link = st.text_input("🔗 Item URL", placeholder="https://example.com/item")
+                quantity = st.number_input("🔢 Quantity", min_value=1, value=1)
+                
+            with col2:
+                attention = st.text_input("👤 Attention To", placeholder="Recipient Name")
+                urgency = st.selectbox("🚨 Urgency Level", ["Normal", "Urgent"], index=0)
+                category = st.selectbox("📦 Category", ["Lab Supplies", "Testing", "Parts & Tools", "Prototype", "Other"])
+            
+            description = st.text_area("📝 Purpose Description", placeholder="Explain why this purchase is needed...", height=100)
+            submitted = st.form_submit_button("🚀 Submit Request", use_container_width=True)
 
-# Form Layout
-with st.form("po_request_form"):
-    st.subheader("📝 Purchase Request Form")
+    if submitted:
+        handle_submission(user_email, requester, link, quantity, attention, urgency, category, description)
 
-    col1, col2 = st.columns(2)
+def handle_submission(user_email, requester, link, quantity, attention, urgency, category, description):
+    # Validation
+    required_fields = {
+        "Requester Name": requester,
+        "Item URL": link,
+        "Attention To": attention,
+        "Description": description
+    }
+    
+    missing = [field for field, value in required_fields.items() if not value]
+    if missing:
+        st.error(f"❌ Missing required fields: {', '.join(missing)}")
+        return
 
-    with col1:
-        requester = st.text_input("Requester Full Name", placeholder="Enter your full name")
-        link = st.text_input("Link to Item(s)", placeholder="Paste the item link")
-        quantity = st.number_input("Quantity", min_value=1, value=1)
+    # Generate PO Data
+    po_data = {
+        "PO Number": f"RD-PO-{datetime.now().strftime('%y%m%d-%H%M%S')}",
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Requester": requester,
+        "Email": user_email,
+        "Item URL": link,
+        "Quantity": quantity,
+        "Attention": attention,
+        "Urgency": urgency,
+        "Category": category,
+        "Description": description,
+        "Status": "Pending"
+    }
 
-    with col2:
-        shipment_address = st.text_input("Shipment Address", value="420 S Hillview Dr, Milpitas, CA 95035")
-        attention_to = st.text_input("Attention To", placeholder="Person receiving the items")
-        department = "R&D"
-        description = st.text_area("Brief Description of Use", placeholder="Explain the purpose of this purchase")
-        classification = st.selectbox("Classification Code", ["Lab Supplies", "Testing", "Parts & Tools", "Prototype", "Other"])
-        urgency = st.selectbox("Urgency", ["Normal", "Urgent"])
+    # Process Submission
+    with st.spinner("🚀 Submitting your request..."):
+        try:
+            if update_google_sheet(po_data):
+                send_confirmation(user_email, po_data)
+                st.balloons()
+                st.success("""
+                ## ✅ Success!
+                Your purchase request has been submitted!
+                - PO Number: **{po_number}**
+                - Approval email sent to: **ermias@ketos.co**
+                """.format(po_number=po_data["PO Number"]))
+        except Exception as e:
+            st.error(f"❌ Submission failed: {str(e)}")
 
-    submitted = st.form_submit_button("📤 Submit Request")
+def send_confirmation(user_email, po_data):
+    email_html = f"""
+    <html>
+        <body>
+            <h2 style='color: #2a3f5f;'>New Purchase Request: {po_data['PO Number']}</h2>
+            <div style='padding: 20px; background: #f8f9fa; border-radius: 10px;'>
+                {pd.DataFrame.from_dict(po_data, orient='index').to_html()}
+            </div>
+            <p style='margin-top: 20px;'>Submitted by: {user_email}</p>
+        </body>
+    </html>
+    """
+    send_email(user_email, f"New PO Request: {po_data['PO Number']}", email_html)
 
-# Processing the Form Submission
-if submitted:
-    if requester and link and description and attention_to:
-        po_number = f"RD-PO-{datetime.now().strftime('%y%m%d-%H%M%S')}"
-        request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        form_data = {
-            "PO Number": po_number,
-            "Requester": requester,
-            "Requester Email": user_email,  # Use authenticated email
-            "Request Date and Time": request_datetime,
-            "Link": link,
-            "Quantity": quantity,
-            "Shipment Address": shipment_address,
-            "Attention To": attention_to,
-            "Department": department,
-            "Description": description,
-            "Classification": classification,
-            "Urgency": urgency
-        }
-
-        # Update Google Sheets
-        if update_google_sheet(form_data):
-            st.success("✅ Request submitted and updated in Google Sheets!")
-
-            # Email content
-            email_body = f"""
-            <html>
-            <body>
-            <h2>New Purchase Request</h2>
-            <p>Dear Approver,</p>
-            <p>A new purchase request has been submitted:</p>
-            <table border="1" cellpadding="5" cellspacing="0">
-                <tr><th>PO Number</th><td>{po_number}</td></tr>
-                <tr><th>Requester</th><td>{requester}</td></tr>
-                <tr><th>Requester Email</th><td>{user_email}</td></tr>
-                <tr><th>Request Date</th><td>{request_datetime}</td></tr>
-                <tr><th>Link</th><td>{link}</td></tr>
-                <tr><th>Quantity</th><td>{quantity}</td></tr>
-                <tr><th>Shipment Address</th><td>{shipment_address}</td></tr>
-                <tr><th>Attention To</th><td>{attention_to}</td></tr>
-                <tr><th>Description</th><td>{description}</td></tr>
-                <tr><th>Classification</th><td>{classification}</td></tr>
-                <tr><th>Urgency</th><td>{urgency}</td></tr>
-            </table>
-            <p>Regards,<br>{requester}</p>
-            </body>
-            </html>
-            """
-
-            # Send Email Notification
-            if send_email(user_email, f"Purchase Request: {po_number}", email_body):
-                st.success("✅ Email notification sent successfully!")
-            else:
-                st.error("⚠️ Email failed to send.")
-        else:
-            st.error("⚠️ Failed to update Google Sheets.")
-    else:
-        st.error("⚠️ Please fill in all required fields.")
+if __name__ == "__main__":
+    main()
