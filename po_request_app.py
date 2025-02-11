@@ -2,60 +2,28 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from google_sheets import update_google_sheet
-from google_auth import send_email
+from google_auth import authenticate_user, send_email
 
 # Modern UI Setup
-st.set_page_config(
-    page_title="R&D Purchase Request",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="R&D Purchase Request", layout="wide")
 
-# Custom CSS for a modern look
-st.markdown("""
-    <style>
-        .main {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .stButton>button {
-            width: 100%;
-            background-color: #007BFF;
-            color: white;
-            font-size: 18px;
-            padding: 10px;
-        }
-        .stSelectbox, .stTextInput, .stTextArea, .stNumberInput {
-            background-color: white;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        .form-section {
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .stSidebar .stButton>button {
-            background-color: #28A745;
-            color: white;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# Authenticate User
+user_email = authenticate_user()
+if not user_email:
+    st.warning("You must log in with your Ketos email (@ketos.co) to submit a request.")
+    st.stop()
 
-# Sidebar Info
-st.sidebar.title("📊 Purchase Summary")
-st.sidebar.write("Track all purchase requests and view their status.")
-st.sidebar.button("🔄 Refresh Data")
+# Restrict access to only Ketos employees
+if not user_email.endswith("@ketos.co"):
+    st.error("Access Denied: You must use a Ketos email to proceed.")
+    st.stop()
+
+st.success(f"✅ Logged in as: {user_email}")
 
 # Main Page Header
 st.title("📦 R&D Purchase Order Request")
 
 # Form Layout
-st.markdown("<div class='form-section'>", unsafe_allow_html=True)
-
 with st.form("po_request_form"):
     st.subheader("📝 Purchase Request Form")
 
@@ -63,7 +31,6 @@ with st.form("po_request_form"):
 
     with col1:
         requester = st.text_input("Requester Full Name", placeholder="Enter your full name")
-        requester_email = st.text_input("Your Email", placeholder="Enter your email")
         link = st.text_input("Link to Item(s)", placeholder="Paste the item link")
         quantity = st.number_input("Quantity", min_value=1, value=1)
 
@@ -77,18 +44,16 @@ with st.form("po_request_form"):
 
     submitted = st.form_submit_button("📤 Submit Request")
 
-st.markdown("</div>", unsafe_allow_html=True)
-
 # Processing the Form Submission
 if submitted:
-    if requester and requester_email and link and description and attention_to:
+    if requester and link and description and attention_to:
         po_number = f"RD-PO-{datetime.now().strftime('%y%m%d-%H%M%S')}"
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         form_data = {
             "PO Number": po_number,
             "Requester": requester,
-            "Requester Email": requester_email,
+            "Requester Email": user_email,  # Use authenticated email
             "Request Date and Time": request_datetime,
             "Link": link,
             "Quantity": quantity,
@@ -114,7 +79,7 @@ if submitted:
             <table border="1" cellpadding="5" cellspacing="0">
                 <tr><th>PO Number</th><td>{po_number}</td></tr>
                 <tr><th>Requester</th><td>{requester}</td></tr>
-                <tr><th>Requester Email</th><td>{requester_email}</td></tr>
+                <tr><th>Requester Email</th><td>{user_email}</td></tr>
                 <tr><th>Request Date</th><td>{request_datetime}</td></tr>
                 <tr><th>Link</th><td>{link}</td></tr>
                 <tr><th>Quantity</th><td>{quantity}</td></tr>
@@ -130,32 +95,11 @@ if submitted:
             """
 
             # Send Email Notification
-            if send_email(f"Purchase Request: {po_number}", email_body):
+            if send_email(user_email, f"Purchase Request: {po_number}", email_body):
                 st.success("✅ Email notification sent successfully!")
             else:
-                st.error("⚠️ Email failed to send. Please contact support.")
+                st.error("⚠️ Email failed to send.")
         else:
             st.error("⚠️ Failed to update Google Sheets.")
     else:
         st.error("⚠️ Please fill in all required fields.")
-
-# Summary Table
-show_summary = st.checkbox("📜 Show Purchase Request Summary")
-
-if show_summary:
-    st.markdown("<div class='form-section'>", unsafe_allow_html=True)
-    st.subheader("📋 Purchase Request Summary")
-
-    # Fetch and display data from Google Sheets
-    from google_sheets import get_google_sheets_client
-    client = get_google_sheets_client()
-    sheet = client.open_by_key("1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY").worksheet("Sheet1")
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
-
-    st.dataframe(df)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# Footer
-st.markdown("---")
-st.markdown("© 2024 R&D Purchase Request Application")
