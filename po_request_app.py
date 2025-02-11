@@ -1,64 +1,88 @@
 import streamlit as st
-from google_sheets import update_google_sheet, test_google_sheet_connection
+import pandas as pd
 from datetime import datetime
-from email.mime.text import MIMEText
-from google_auth import get_gmail_service
-from googleapiclient.discovery import build
-import base64
+from google_sheets import update_google_sheet
+from google_auth import send_email
 
-# Constants
-RECIPIENT_EMAIL = 'ermias@ketos.co'
+# Modern UI Setup
+st.set_page_config(
+    page_title="R&D Purchase Request",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Function to generate PO number
-def generate_po_number():
-    """Generate a unique PO number."""
-    current_date = datetime.now().strftime("%y%m%d-%H%M%S")
-    return f"RD-PO-{current_date}"
+# Custom CSS for a modern look
+st.markdown("""
+    <style>
+        .main {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .stButton>button {
+            width: 100%;
+            background-color: #007BFF;
+            color: white;
+            font-size: 18px;
+            padding: 10px;
+        }
+        .stSelectbox, .stTextInput, .stTextArea, .stNumberInput {
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .form-section {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .stSidebar .stButton>button {
+            background-color: #28A745;
+            color: white;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# Function to send email
-def send_email(sender_email, subject, email_body):
-    """Send an email notification to the PO approver."""
-    try:
-        gmail_service = get_gmail_service()
-        if not gmail_service:
-            st.warning("Please log in with Google to send emails.")
-            return False
+# Sidebar Info
+st.sidebar.title("📊 Purchase Summary")
+st.sidebar.write("Track all purchase requests and view their status.")
+st.sidebar.button("🔄 Refresh Data")
 
-        message = MIMEText(email_body, 'html')
-        message['to'] = "ermias@ketos.co"  # Approver email
-        message['from'] = sender_email
-        message['subject'] = subject
+# Main Page Header
+st.title("📦 R&D Purchase Order Request")
 
-        raw_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}
-        gmail_service.users().messages().send(userId="me", body=raw_message).execute()
-        
-        return True
-    except Exception as e:
-        st.error(f"Error sending email: {str(e)}")
-        return False
-
-
-# Streamlit UI
-st.title("R&D Purchase Request Application")
+# Form Layout
+st.markdown("<div class='form-section'>", unsafe_allow_html=True)
 
 with st.form("po_request_form"):
-    st.subheader("Purchase Request Form")
-    requester = st.text_input("Requester Full Name")
-    requester_email = st.text_input("Your Email Address")  # Removed Google Auth, user inputs their email
-    link = st.text_input("Link to Item(s)")
-    quantity = st.number_input("Quantity", min_value=1, value=1)
-    shipment_address = st.text_input("Shipment Address", value="420 S Hillview Dr, Milpitas, CA 95035")
-    attention_to = st.text_input("Attention To")
-    department = "R&D"
-    description = st.text_area("Brief Description of Use")
-    classification = st.selectbox("Classification Code", ["Lab Supplies", "Testing", "Parts & Tools", "Prototype", "Other"])
-    urgency = st.selectbox("Urgency", ["Normal", "Urgent"])
+    st.subheader("📝 Purchase Request Form")
 
-    submitted = st.form_submit_button("Submit Request")
+    col1, col2 = st.columns(2)
 
+    with col1:
+        requester = st.text_input("Requester Full Name", placeholder="Enter your full name")
+        requester_email = st.text_input("Your Email", placeholder="Enter your email")
+        link = st.text_input("Link to Item(s)", placeholder="Paste the item link")
+        quantity = st.number_input("Quantity", min_value=1, value=1)
+
+    with col2:
+        shipment_address = st.text_input("Shipment Address", value="420 S Hillview Dr, Milpitas, CA 95035")
+        attention_to = st.text_input("Attention To", placeholder="Person receiving the items")
+        department = "R&D"
+        description = st.text_area("Brief Description of Use", placeholder="Explain the purpose of this purchase")
+        classification = st.selectbox("Classification Code", ["Lab Supplies", "Testing", "Parts & Tools", "Prototype", "Other"])
+        urgency = st.selectbox("Urgency", ["Normal", "Urgent"])
+
+    submitted = st.form_submit_button("📤 Submit Request")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Processing the Form Submission
 if submitted:
     if requester and requester_email and link and description and attention_to:
-        po_number = generate_po_number()
+        po_number = f"RD-PO-{datetime.now().strftime('%y%m%d-%H%M%S')}"
         request_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         form_data = {
@@ -78,16 +102,16 @@ if submitted:
 
         # Update Google Sheets
         if update_google_sheet(form_data):
-            st.success("Request submitted and updated in Google Sheets!")
+            st.success("✅ Request submitted and updated in Google Sheets!")
 
-            # Email notification to the approver
+            # Email content
             email_body = f"""
             <html>
             <body>
             <h2>New Purchase Request</h2>
             <p>Dear Approver,</p>
             <p>A new purchase request has been submitted:</p>
-            <table border="1">
+            <table border="1" cellpadding="5" cellspacing="0">
                 <tr><th>PO Number</th><td>{po_number}</td></tr>
                 <tr><th>Requester</th><td>{requester}</td></tr>
                 <tr><th>Requester Email</th><td>{requester_email}</td></tr>
@@ -105,15 +129,33 @@ if submitted:
             </html>
             """
 
-            if send_email(requester_email, f"Purchase Request: {po_number}", email_body):
-                st.success("Email notification sent to the approver!")
+            # Send Email Notification
+            if send_email(f"Purchase Request: {po_number}", email_body):
+                st.success("✅ Email notification sent successfully!")
             else:
-                st.error("Email failed to send.")
+                st.error("⚠️ Email failed to send. Please contact support.")
         else:
-            st.error("Failed to update Google Sheets.")
+            st.error("⚠️ Failed to update Google Sheets.")
     else:
-        st.error("Please fill in all required fields.")
+        st.error("⚠️ Please fill in all required fields.")
 
-if st.button("Test Google Sheets Connection"):
-    test_google_sheet_connection()
+# Summary Table
+show_summary = st.checkbox("📜 Show Purchase Request Summary")
 
+if show_summary:
+    st.markdown("<div class='form-section'>", unsafe_allow_html=True)
+    st.subheader("📋 Purchase Request Summary")
+
+    # Fetch and display data from Google Sheets
+    from google_sheets import get_google_sheets_client
+    client = get_google_sheets_client()
+    sheet = client.open_by_key("1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY").worksheet("Sheet1")
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+
+    st.dataframe(df)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Footer
+st.markdown("---")
+st.markdown("© 2024 R&D Purchase Request Application")
