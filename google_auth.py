@@ -13,7 +13,6 @@ def authenticate_user():
     """Authenticate user via Google OAuth and return their email."""
     creds = None
 
-    # Load credentials from token.pickle if available
     if st.secrets.get("google_oauth_client"):
         client_config = {
             "web": {
