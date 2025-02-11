@@ -1,10 +1,12 @@
 import streamlit as st
 import json
-import os
 import pickle
+import os
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+import base64
+from email.mime.text import MIMEText
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/userinfo.email", "openid"]
 TOKEN_PATH = "token.pickle"
@@ -13,45 +15,45 @@ def authenticate_user():
     """Authenticate user via Google OAuth and return their email."""
     creds = None
 
-    # Load stored token if it exists
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as token:
-            creds = pickle.load(token)
-
-    # If token is expired or not available, refresh or request new authentication
+    # Check if OAuth credentials exist in session state
+    if "google_auth_creds" in st.session_state:
+        creds = pickle.loads(st.session_state["google_auth_creds"])
+    
+    # If token is expired or missing, request authentication
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # Use Streamlit secrets instead of a JSON file
-            client_config = {
-                "web": {
-                    "client_id": st.secrets["google_oauth_client"]["client_id"],
-                    "client_secret": st.secrets["google_oauth_client"]["client_secret"],
-                    "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
-                    "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
-                    "token_uri": st.secrets["google_oauth_client"]["token_uri"],
-                    "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
+            # Read credentials from Streamlit Secrets
+            if st.secrets.get("google_oauth_client"):
+                client_config = {
+                    "web": {
+                        "client_id": st.secrets["google_oauth_client"]["client_id"],
+                        "client_secret": st.secrets["google_oauth_client"]["client_secret"],
+                        "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
+                        "auth_uri": st.secrets["google_oauth_client"]["auth_uri"],
+                        "token_uri": st.secrets["google_oauth_client"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["google_oauth_client"]["auth_provider_x509_cert_url"]
+                    }
                 }
-            }
 
-            flow = Flow.from_client_config(client_config, SCOPES)
-            flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
+                flow = Flow.from_client_config(client_config, SCOPES)
+                flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
 
-            auth_url, _ = flow.authorization_url(prompt="consent")
+                # If user has already logged in, fetch token from query parameters
+                query_params = st.experimental_get_query_params()
+                if "code" in query_params:
+                    flow.fetch_token(code=query_params["code"][0])
+                    creds = flow.credentials
+                    st.session_state["google_auth_creds"] = pickle.dumps(creds)
 
-            # Show login button
-            st.markdown(f"[Click here to log in with Google]({auth_url})")
-            st.stop()  # Prevent further execution until login completes
+                # If user is not logged in, show login link
+                if not creds or not creds.valid:
+                    auth_url, _ = flow.authorization_url(prompt="consent")
+                    st.markdown(f"[Click here to log in with Google]({auth_url})")
+                    st.stop()
 
-            # After login, fetch the credentials
-            creds = flow.run_local_server(port=0)
-
-            # Save token for future use
-            with open(TOKEN_PATH, "wb") as token:
-                pickle.dump(creds, token)
-
-    # Fetch user email after successful authentication
+    # Fetch user email after authentication
     user_info_service = build("oauth2", "v2", credentials=creds)
     user_info = user_info_service.userinfo().get().execute()
 
@@ -59,17 +61,10 @@ def authenticate_user():
 
 def get_gmail_service():
     """Authenticate and return Gmail API service."""
-    creds = None
-
-    # Load stored token if available
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as token:
-            creds = pickle.load(token)
-
-    if not creds or not creds.valid:
-        return None
-
-    return build("gmail", "v1", credentials=creds)
+    if "google_auth_creds" in st.session_state:
+        creds = pickle.loads(st.session_state["google_auth_creds"])
+        return build("gmail", "v1", credentials=creds)
+    return None
 
 def send_email(sender_email, subject, email_body):
     """Send an email notification using the logged-in user's Gmail account."""
