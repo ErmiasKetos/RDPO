@@ -25,7 +25,12 @@ def update_google_sheet(form_data):
     try:
         # Replace with your actual Google Sheet ID
         SHEET_ID = "1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY"
-        sheet = client.open_by_key(SHEET_ID).worksheet("purchase_summary")
+        sheet = client.open_by_key(SHEET_ID)
+
+        sheet_names = [ws.title for ws in sheet.worksheets()]
+        st.write(f"Available worksheets: {sheet_names}")
+
+        worksheet = sheet.worksheet("Sheet1")
 
         # Append new row with form data
         sheet.append_row([
