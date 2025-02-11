@@ -3,6 +3,7 @@ from google_sheets import update_google_sheet, test_google_sheet_connection
 from datetime import datetime
 from email.mime.text import MIMEText
 from google_auth import get_gmail_service
+from googleapiclient.discovery import build
 import base64
 
 # Constants
@@ -19,17 +20,23 @@ def send_email(sender_email, subject, email_body):
     """Send an email notification to the PO approver."""
     try:
         gmail_service = get_gmail_service()
+        if not gmail_service:
+            st.warning("Please log in with Google to send emails.")
+            return False
+
         message = MIMEText(email_body, 'html')
-        message['to'] = RECIPIENT_EMAIL
+        message['to'] = "ermias@ketos.co"  # Approver email
         message['from'] = sender_email
         message['subject'] = subject
-        
+
         raw_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}
-        gmail_service.users().messages().send(userId='me', body=raw_message).execute()
+        gmail_service.users().messages().send(userId="me", body=raw_message).execute()
+        
         return True
     except Exception as e:
         st.error(f"Error sending email: {str(e)}")
         return False
+
 
 # Streamlit UI
 st.title("R&D Purchase Request Application")
