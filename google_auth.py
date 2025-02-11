@@ -1,44 +1,70 @@
 import streamlit as st
-import os
-import json
-import pickle
-from google_auth_oauthlib.flow import Flow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
+import base64
+from email.mime.text import MIMEText
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-TOKEN_PATH = "token.pickle"
+# Define required scopes
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/gmail.send"
+]
+
+def get_credentials():
+    """Authenticate using the service account stored in Streamlit secrets."""
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=SCOPES
+        )
+        return credentials
+    except Exception as e:
+        st.error(f"Error getting credentials: {str(e)}")
+        return None
+
+def get_drive_service():
+    """Initialize Google Drive API service."""
+    creds = get_credentials()
+    if creds:
+        return build("drive", "v3", credentials=creds)
+    return None
+
+def get_sheets_service():
+    """Initialize Google Sheets API service."""
+    creds = get_credentials()
+    if creds:
+        return build("sheets", "v4", credentials=creds)
+    return None
 
 def get_gmail_service():
-    """Authenticate using OAuth 2.0 and return Gmail API service."""
-    creds = None
+    """Initialize Gmail API service."""
+    creds = get_credentials()
+    if creds:
+        return build("gmail", "v1", credentials=creds)
+    return None
 
-    # Load credentials from token.pickle if available
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as token:
-            creds = pickle.load(token)
+def send_email(subject, email_body):
+    """Send an email notification using the service account."""
+    try:
+        gmail_service = get_gmail_service()
+        if not gmail_service:
+            st.error("Failed to initialize Gmail service.")
+            return False
 
-    # If credentials are invalid, request new authorization
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            # Use Streamlit Secrets to store OAuth credentials
-            client_config = {
-                "web": {
-                    "client_id": st.secrets["google_oauth_client"]["client_id"],
-                    "client_secret": st.secrets["google_oauth_client"]["client_secret"],
-                    "redirect_uris": [st.secrets["google_oauth_client"]["redirect_uri"]],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token"
-                }
-            }
+        sender_email = st.secrets["gcp_service_account"]["client_email"]
+        recipient_email = "ermias@ketos.co"  # PO approver email
 
-            flow = Flow.from_client_config(client_config, SCOPES)
-            flow.redirect_uri = st.secrets["google_oauth_client"]["redirect_uri"]
+        message = MIMEText(email_body, 'html')
+        message['to'] = recipient_email
+        message['from'] = sender_email
+        message['subject'] = subject
 
-            auth_url, _ = flow.authorization_url(prompt="consent")
-            st.markdown(f"[Click here to log in with Google]({auth_url})")
-            return None  # Stop execution until user logs in
-
-    return build("gmail", "v1", credentials=creds)
+        raw_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}
+        gmail_service.users().messages().send(userId="me", body=raw_message).execute()
+        
+        st.success("✅ Email successfully sent to the PO approver!")
+        return True
+    except Exception as e:
+        st.error(f"Error sending email: {str(e)}")
+        return False
