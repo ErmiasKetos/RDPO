@@ -1,21 +1,3 @@
-import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
-
-# Define the Google Sheets scope
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
-def get_google_sheets_client():
-    """Authenticate and return a Google Sheets client."""
-    try:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=SCOPES
-        )
-        return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {str(e)}")
-        return None
-
 def update_google_sheet(form_data):
     """Append a new purchase request to the Google Sheet."""
     client = get_google_sheets_client()
@@ -23,7 +5,9 @@ def update_google_sheet(form_data):
         return False
 
     try:
-        sheet = client.open_by_key("Sheet1").worksheet("purchase_summary")
+        # Replace this with your actual Google Sheet ID
+        sheet = client.open_by_key("1Su8RA77O7kixU03jrm6DhDOAUYijW-JBBDZ7DK6ulrY").worksheet("purchase_summary")
+
         sheet.append_row([
             form_data['PO Number'],
             form_data['Requester'],
