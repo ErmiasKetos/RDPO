@@ -47,7 +47,7 @@ def authenticate_user():
             redirect_uri=st.secrets["google_oauth_client"]["redirect_uris"][0]
         )
 
-        # Handle OAuth callback using new st.query_params
+        # Handle OAuth callback using st.query_params
         if 'code' in st.query_params:
             with st.spinner("Authenticating..."):
                 try:
@@ -84,12 +84,11 @@ def authenticate_user():
 
         # Show login button if not authenticated
         if not st.session_state.google_auth['creds']:
-            # Add additional parameters for better security
+            # Fixed: Remove response_type from auth_params as it's handled by flow.authorization_url()
             auth_params = {
                 'access_type': 'offline',
                 'include_granted_scopes': 'true',
                 'prompt': 'consent',
-                'response_type': 'code',
                 'hd': 'ketos.co'  # Restrict to ketos.co domain
             }
             
