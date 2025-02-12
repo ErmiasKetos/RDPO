@@ -60,6 +60,8 @@ def authenticate_user():
     if not st.session_state.google_auth['creds']:
         st.markdown(f"""
         <div style='text-align: center; margin: 2rem;'>
+            <h2>Welcome to Ketos PO System</h2>
+            <p>Please log in with your Ketos email to continue.</p>
             <a href="{flow.authorization_url()[0]}" target="_self">
                 <button style='
                     background: #4285F4;
@@ -69,6 +71,7 @@ def authenticate_user():
                     border-radius: 4px;
                     font-size: 16px;
                     cursor: pointer;
+                    transition: background 0.3s;
                 '>
                     <strong>🔑 Continue with Google</strong>
                 </button>
@@ -110,3 +113,4 @@ def send_email(sender_email, subject, email_body):
     except Exception as e:
         st.error(f"Failed to send email: {str(e)}")
         return False
+
