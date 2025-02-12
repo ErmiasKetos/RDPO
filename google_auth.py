@@ -5,6 +5,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import os
+from urllib.parse import urlencode
 
 # Important: Set this environment variable
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -46,46 +47,59 @@ def authenticate_user():
             redirect_uri=st.secrets["google_oauth_client"]["redirect_uris"][0]
         )
 
-        # Handle OAuth callback
-        query_params = st.experimental_get_query_params()
-        if 'code' in query_params:
+        # Handle OAuth callback using new st.query_params
+        if 'code' in st.query_params:
             with st.spinner("Authenticating..."):
                 try:
-                    flow.fetch_token(code=query_params['code'][0])
+                    flow.fetch_token(code=st.query_params['code'])
                     creds = flow.credentials
                     
                     # Get user info
                     user_info_service = build("oauth2", "v2", credentials=creds)
                     user_info = user_info_service.userinfo().get().execute()
                     
+                    # Validate email domain
+                    if not user_info['email'].endswith('@ketos.co'):
+                        st.error("Please use your @ketos.co email address")
+                        if 'google_auth' in st.session_state:
+                            del st.session_state['google_auth']
+                        st.stop()
+                    
                     # Store in session state
                     st.session_state.google_auth = {
                         'creds': creds,
                         'email': user_info['email']
                     }
-                    st.experimental_set_query_params()  # Clear URL params
+                    
+                    # Clear query parameters and reload
+                    st.query_params.clear()
                     st.rerun()
                     
                 except Exception as e:
-                    st.error(f"Authentication failed: {str(e)}")
-                    st.error("Please try logging in again")
+                    st.error("Authentication failed. Please try again.")
+                    st.error(f"Error details: {str(e)}")
                     if 'google_auth' in st.session_state:
                         del st.session_state['google_auth']
                     st.stop()
 
         # Show login button if not authenticated
         if not st.session_state.google_auth['creds']:
-            auth_url, _ = flow.authorization_url(
-                access_type='offline',
-                include_granted_scopes='true',
-                prompt='consent'
-            )
+            # Add additional parameters for better security
+            auth_params = {
+                'access_type': 'offline',
+                'include_granted_scopes': 'true',
+                'prompt': 'consent',
+                'response_type': 'code',
+                'hd': 'ketos.co'  # Restrict to ketos.co domain
+            }
+            
+            auth_url, _ = flow.authorization_url(**auth_params)
             
             st.markdown(f"""
             <div style='text-align: center; margin: 2rem;'>
-                <h2>Welcome to Ketos PO System</h2>
-                <p>Please log in with your Ketos email to continue.</p>
-                <a href="{auth_url}" target="_self">
+                <h2 style='color: #1a73e8; margin-bottom: 1rem;'>Welcome to Ketos PO System</h2>
+                <p style='color: #5f6368; margin-bottom: 2rem;'>Please log in with your Ketos email to continue.</p>
+                <a href="{auth_url}" target="_self" style='text-decoration: none;'>
                     <button style='
                         background: #4285F4;
                         color: white;
@@ -94,10 +108,11 @@ def authenticate_user():
                         border-radius: 4px;
                         font-size: 16px;
                         cursor: pointer;
-                        transition: background 0.3s;
+                        transition: all 0.3s;
                         display: inline-flex;
                         align-items: center;
-                        gap: 8px;
+                        gap: 12px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.25);
                     '>
                         <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
                             <path fill="#fff" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
@@ -105,10 +120,10 @@ def authenticate_user():
                             <path fill="#fff" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.155 0 7.54 0 9s.348 2.845.957 4.039l3.007-2.332z"/>
                             <path fill="#fff" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
                         </svg>
-                        <strong>Continue with Google</strong>
+                        <strong>Sign in with Google</strong>
                     </button>
                 </a>
-                <p style='margin-top: 1rem; color: #666;'>
+                <p style='margin-top: 1.5rem; color: #5f6368; font-size: 0.9rem;'>
                     You must use your @ketos.co email to access this system
                 </p>
             </div>
@@ -116,7 +131,8 @@ def authenticate_user():
             st.stop()
 
     except Exception as e:
-        st.error(f"Error setting up authentication: {str(e)}")
+        st.error("Failed to initialize authentication")
+        st.error(f"Error details: {str(e)}")
         st.error("Please contact your administrator")
         st.stop()
 
