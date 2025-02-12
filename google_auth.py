@@ -7,6 +7,7 @@ from google.auth.transport.requests import Request
 from urllib.parse import urlencode
 import requests
 from requests.exceptions import ConnectionError, SSLError
+import secrets
 
 # Configuration
 SCOPES = [
@@ -27,6 +28,12 @@ def check_google_connection():
     except Exception as e:
         st.error(f"Unexpected error checking connection: {str(e)}")
         return False
+
+def generate_state_parameter():
+    """Generate a secure state parameter for OAuth"""
+    if 'oauth_state' not in st.session_state:
+        st.session_state.oauth_state = secrets.token_urlsafe(32)
+    return st.session_state.oauth_state
 
 def authenticate_user():
     """Modernized authentication flow with HTTPS support"""
@@ -65,6 +72,13 @@ def authenticate_user():
         if 'code' in st.query_params:
             with st.spinner("Authenticating..."):
                 try:
+                    # Verify state parameter
+                    if 'state' not in st.query_params or st.query_params['state'] != st.session_state.oauth_state:
+                        st.error("Invalid state parameter. Please try again.")
+                        if 'google_auth' in st.session_state:
+                            del st.session_state['google_auth']
+                        st.stop()
+                    
                     flow.fetch_token(code=st.query_params['code'])
                     creds = flow.credentials
                     
@@ -98,12 +112,15 @@ def authenticate_user():
 
         # Show login button if not authenticated
         if not st.session_state.google_auth['creds']:
+            # Generate state parameter
+            state = generate_state_parameter()
+            
             auth_params = {
                 'access_type': 'offline',
                 'include_granted_scopes': 'true',
                 'prompt': 'consent',
                 'hd': 'ketos.co',  # Restrict to ketos.co domain
-                'state': st.session_state._session_id  # Add state parameter for security
+                'state': state  # Add secure state parameter
             }
             
             try:
