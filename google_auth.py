@@ -25,11 +25,13 @@ def authenticate_user():
         return st.session_state.google_auth['email']
 
     # Initialize OAuth flow
-    client_config = st.secrets["google_oauth_client"]
+    client_config = {
+        "web": st.secrets["google_oauth_client"]
+    }
     flow = Flow.from_client_config(
         client_config=client_config,
         scopes=SCOPES,
-        redirect_uri=client_config['web']['redirect_uris'][0]
+        redirect_uri=st.secrets["google_oauth_client"]["redirect_uris"][0]
     )
 
     # Handle OAuth callback
